@@ -1,0 +1,34 @@
+# =========================
+# Node.js (React / Electron)
+# =========================
+node_modules/
+dist/
+build/
+out/
+.env
+
+# =========================
+# .NET 8 (C#)
+# =========================
+bin/
+obj/
+.vs/
+*.user
+*.suo
+appsettings.Development.json
+
+# =========================
+# Java (Spring Boot)
+# =========================
+target/
+*.class
+.mvn/
+!/.mvn/wrapper/maven-wrapper.jar
+
+# =========================
+# IDEs y SO
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

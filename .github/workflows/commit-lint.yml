@@ -1,0 +1,20 @@
+name: Validate Conventional Commits
+on:
+  push:
+    branches:
+      [main, master, develop]
+  pull_request:
+    branches:
+      [main, master, develop]
+
+jobs:
+  commitlint:
+    name: Review commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate commits
+        uses: wagoid/commitlint-github-action@v6
