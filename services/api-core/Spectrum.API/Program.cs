@@ -1,0 +1,1 @@
+Console.WriteLine("Temporary API project. This will be removed once the API is fully implemented.");
