@@ -28,5 +28,12 @@ namespace Spectrum.API.Controllers
             var response = await _authService.LoginAsync(loginDto);
             return Ok(response);
         }
+
+        [HttpPost("google")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleAuthDto googleAuthDto)
+        {
+            var response = await _authService.GoogleLoginAsync(googleAuthDto);
+            return Ok(response);
+        }
     }
 }
