@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectrum.API", "Spectrum.API\Spectrum.API.csproj", "{FECF08C2-B688-4B4C-A964-7DA6EB1AEB4A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spectrum.Tests", "Spectrum.Tests\Spectrum.Tests.csproj", "{5F9A4610-D795-4C5D-99DB-252EDE7486C7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,18 @@ Global
 		{FECF08C2-B688-4B4C-A964-7DA6EB1AEB4A}.Release|x64.Build.0 = Release|Any CPU
 		{FECF08C2-B688-4B4C-A964-7DA6EB1AEB4A}.Release|x86.ActiveCfg = Release|Any CPU
 		{FECF08C2-B688-4B4C-A964-7DA6EB1AEB4A}.Release|x86.Build.0 = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|x64.Build.0 = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Debug|x86.Build.0 = Debug|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|x64.ActiveCfg = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|x64.Build.0 = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|x86.ActiveCfg = Release|Any CPU
+		{5F9A4610-D795-4C5D-99DB-252EDE7486C7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
