@@ -11,6 +11,7 @@ namespace Spectrum.API.Services.Auth
     public interface IAuthService
     {
         Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto);
+        Task<AuthResponseDto> RegisterAdminAsync(RegisterAdminDto registerAdminDto);
         Task<AuthResponseDto> LoginAsync(LoginDto loginDto);
         Task<AuthResponseDto> GoogleLoginAsync(GoogleAuthDto googleAuthDto);
     }
@@ -39,7 +40,7 @@ namespace Spectrum.API.Services.Auth
             }
             catch (InvalidJwtException)
             {
-                throw new SpectrumUnauthorizedException("Invalid Google token.");
+                throw new SpectrumUnauthorizedException("unauthorized");
             }
 
             var user = await CreateOrGetGoogleUserAsync(payload);
@@ -54,15 +55,35 @@ namespace Spectrum.API.Services.Auth
         public async Task<AuthResponseDto> LoginAsync(LoginDto loginDto)
         {
             var user = await _userRepository.GetUserByEmailAsync(loginDto.Email);
-            if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            AuthUtilities.ValidateLoginInput(user, loginDto);
+
+            return new AuthResponseDto
             {
-                throw new SpectrumUnauthorizedException("Invalid credentials.");
+                Token = AuthUtilities.GenerateJwtToken(user, _configuration),
+                Username = user.Username,
+                Email = user.Email
+            };
+        }
+
+        public async Task<AuthResponseDto> RegisterAdminAsync(RegisterAdminDto registerAdminDto)
+        {
+            var masterKey = _configuration["Admin:MasterKey"];
+            if (registerAdminDto.AdminSecretKey != masterKey)
+            {
+                throw new SpectrumUnauthorizedException("invalidAdminKey");
             }
 
-            if (user.IsSuspended)
+            await AuthUtilities.ValidateRegisterInput(registerAdminDto, _userRepository);
+
+            var user = new User
             {
-                throw new SpectrumBusinessException("This account has been suspended.");
-            }
+                Username = registerAdminDto.Username,
+                Email = registerAdminDto.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerAdminDto.Password),
+                CreatedAt = DateTime.UtcNow,
+                Role = UserRole.Admin
+            };
+            await _userRepository.AddUserAsync(user);
 
             return new AuthResponseDto
             {
@@ -74,17 +95,14 @@ namespace Spectrum.API.Services.Auth
 
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
         {
-            if (await _userRepository.EmailExistsAsync(registerDto.Email))
-            {
-                throw new SpectrumBusinessException("Email is already registered.");
-            }
-
+            await AuthUtilities.ValidateRegisterInput(registerDto, _userRepository);
             var user = new User
             {
                 Username = registerDto.Username,
                 Email = registerDto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password),
                 CreatedAt = DateTime.UtcNow,
+                Role = UserRole.Reviewer,
                 IsSuspended = false,
                 IsDeleted = false
             };
@@ -118,7 +136,7 @@ namespace Spectrum.API.Services.Auth
             {
                 if (user.IsSuspended)
                 {
-                    throw new SpectrumBusinessException("This account has been suspended.");
+                    throw new SpectrumUnauthorizedException("accountSuspended");
                 }
             }
             return user;

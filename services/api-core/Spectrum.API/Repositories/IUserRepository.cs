@@ -7,6 +7,7 @@ namespace Spectrum.API.Repositories
     public interface IUserRepository
     {
         Task<bool> EmailExistsAsync(string email);
+        Task<bool> UsernameExistsAsync(string username);
         Task<User> GetUserByEmailAsync(string email);
         Task AddUserAsync(User user);
     }
@@ -34,6 +35,11 @@ namespace Spectrum.API.Repositories
         public async Task<User> GetUserByEmailAsync(string email)
         {
             return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        }
+
+        public async Task<bool> UsernameExistsAsync(string username)
+        {
+            return await _context.Users.AnyAsync(u => u.Username == username);
         }
     }
 }

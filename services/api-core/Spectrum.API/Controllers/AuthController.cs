@@ -35,5 +35,12 @@ namespace Spectrum.API.Controllers
             var response = await _authService.GoogleLoginAsync(googleAuthDto);
             return Ok(response);
         }
+
+        [HttpPost("register-admin")]
+        public async Task<IActionResult> RegisterAdmin([FromBody] RegisterAdminDto registerAdminDto)
+        {
+            var response = await _authService.RegisterAdminAsync(registerAdminDto);
+            return Ok(response);
+        }
     }
 }
