@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Spectrum.API.Utilities
 {
-    public class AuthUtilities
+    public static class AuthUtilities
     {
         public static string GenerateJwtToken(User user, IConfiguration configuration)
         {

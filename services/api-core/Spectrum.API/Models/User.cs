@@ -24,6 +24,11 @@ namespace Spectrum.API.Models
         [Column("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 
+        [Required]
+        [MaxLength(20)]
+        [Column("role")]
+        public string Role { get; set; } = UserRole.Reviewer;
+
         [Column("is_suspended")]
         public bool IsSuspended { get; set; } = false;
 
@@ -32,5 +37,11 @@ namespace Spectrum.API.Models
 
         [Column("created_at")]
         public DateTime CreatedAt { get; set; }
+    }
+
+    public static class UserRole
+    {
+        public const string Admin = "ADMIN";
+        public const string Reviewer = "REVIEWER";
     }
 }
