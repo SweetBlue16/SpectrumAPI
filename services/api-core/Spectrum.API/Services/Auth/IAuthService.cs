@@ -53,7 +53,7 @@ namespace Spectrum.API.Services.Auth
             {
                 var settings = new ValidationSettings
                 {
-                    Audience = new[] { _configuration["Google:ClientId"] }
+                    Audience = new[] { _configuration["GoogleAuth:ClientId"] }
                 };
                 payload = await ValidateAsync(googleAuthDto.Credential, settings);
             }
