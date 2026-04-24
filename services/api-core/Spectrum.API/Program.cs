@@ -10,13 +10,18 @@ using Spectrum.API.Services.External;
 using System.Reflection;
 using System.Text;
 
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("\n[SPECTRUM API] Starting server configuration...");
+Console.ResetColor();
+
 var builder = WebApplication.CreateBuilder(args);
 
+Console.WriteLine("[SPECTRUM API] Configuring exceptions and controllers...");
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
-
 builder.Services.AddControllers();
 
+Console.WriteLine("[SPECTRUM API] Configuring CORS policy (AllowFrontend)...");
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -27,22 +32,25 @@ builder.Services.AddCors(options =>
     });
 });
 
+Console.WriteLine("[SPECTRUM API] Configuring PostgreSQL database context...");
 builder.Services.AddDbContext<SpectrumDbContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
+Console.WriteLine("[SPECTRUM API] Registering repositories and services...");
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAdminDetailRepository, AdminDetailRepository>();
-
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+Console.WriteLine("[SPECTRUM API] Configuring external HTTP client for RAWG API...");
 builder.Services.AddHttpClient<IGameIntegrationService, GameIntegrationService>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["RawgApi:BaseUrl"]);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
+Console.WriteLine("[SPECTRUM API] Configuring JWT Authentication...");
 var jwtSecret = builder.Configuration["JwtSettings:Secret"];
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -59,6 +67,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+Console.WriteLine("[SPECTRUM API] Generating Swagger documentation...");
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -94,8 +103,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+Console.WriteLine("[SPECTRUM API] Building the application...");
 var app = builder.Build();
 
+Console.WriteLine("[SPECTRUM API] Setting up the HTTP request pipeline...");
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -112,5 +123,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+Console.ForegroundColor = ConsoleColor.Green;
+Console.WriteLine("[SPECTRUM API] Boot sequence complete. Server is now listening to requests!\n");
+Console.ResetColor();
 
 app.Run();
