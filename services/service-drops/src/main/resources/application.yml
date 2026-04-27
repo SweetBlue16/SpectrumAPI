@@ -1,6 +1,6 @@
 spring:
   mongodb:
-    uri: mongodb://${DB_MONGO_USER}:${DB_MONGO_PASSWORD}@localhost:27017/${DB_MONGO_NAME}
+    uri: mongodb://${DB_MONGO_USER}:${DB_MONGO_PASSWORD}@localhost:27017/${DB_MONGO_DROPS_NAME}
 
 grpc:
   server:

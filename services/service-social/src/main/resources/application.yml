@@ -1,0 +1,7 @@
+spring:
+  mongodb:
+    uri: mongodb://${DB_MONGO_USER}:${DB_MONGO_PASSWORD}@localhost:27017/${DB_MONGO_SOCIAL_NAME}
+
+grpc:
+  server:
+    port: 9091
