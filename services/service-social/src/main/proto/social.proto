@@ -57,3 +57,47 @@ message DeleteCommentRequest {
 message DeleteResponse {
   bool success = 1;
 }
+
+service ReportService {
+  rpc SubmitReport (SubmitReportRequest) returns (ReportResponse);
+  rpc ListReportsByStatus (ListReportsRequest) returns (stream ReportDetails);
+  rpc UpdateReportStatus (UpdateReportStatusRequest) returns (ReportActionResponse);
+}
+
+message SubmitReportRequest {
+  string reporter_id = 1;
+  string target_id = 2;
+  string target_type = 3;
+  string reason = 4;
+}
+
+message ListReportsRequest {
+  string status = 1;
+}
+
+message UpdateReportStatusRequest {
+  string report_id = 1;
+  string moderator_id = 2;
+  string new_status = 3;
+  string resolution_notes = 4;
+}
+
+message ReportDetails {
+  string report_id = 1;
+  string reporter_id = 2;
+  string target_id = 3;
+  string target_type = 4;
+  string reason = 5;
+  string status = 6;
+  int64 reported_at = 7;
+}
+
+message ReportActionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ReportResponse {
+  bool success = 1;
+  string message = 2;
+}
