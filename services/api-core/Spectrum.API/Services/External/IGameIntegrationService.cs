@@ -91,7 +91,8 @@ namespace Spectrum.API.Services.External
                     .Where(p => !string.IsNullOrEmpty(p.Value))
                     .Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value!)}"));
                 var response = await _httpClient.GetFromJsonAsync<RawgResponseDto>($"{GamesEndpoint}?{queryString}");
-                return (IEnumerable<RawgGameDto>)(response ?? new RawgResponseDto { Results = new List<RawgGameDto>() });
+                //return (IEnumerable<RawgGameDto>)(response ?? new RawgResponseDto { Results = new List<RawgGameDto>() });
+                return response?.Results ?? Enumerable.Empty<RawgGameDto>();
             }
             catch (HttpRequestException ex)
             {
