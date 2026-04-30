@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Spectrum.API.Data;
+using Spectrum.API.Grpc.Drops;
+using Spectrum.API.Grpc.Social;
 using Spectrum.API.Middlewares;
 using Spectrum.API.Repositories;
 using Spectrum.API.Services.Auth;
@@ -101,6 +103,27 @@ builder.Services.AddSwaggerGen(c =>
             new List<string>()
         }
     });
+});
+
+Console.WriteLine("[SPECTRUM API] Configuring gRPC clients for services...");
+builder.Services.AddGrpcClient<DropService.DropServiceClient>(options =>
+{
+    options.Address = new Uri("http://localhost:9090");
+});
+
+builder.Services.AddGrpcClient<VoteService.VoteServiceClient>(options =>
+{
+    options.Address = new Uri("http://localhost:9091");
+});
+
+builder.Services.AddGrpcClient<CommentService.CommentServiceClient>(options =>
+{
+    options.Address = new Uri("http://localhost:9091");
+});
+
+builder.Services.AddGrpcClient<ReportService.ReportServiceClient>(options =>
+{
+    options.Address = new Uri("http://localhost:9091");
 });
 
 Console.WriteLine("[SPECTRUM API] Building the application...");

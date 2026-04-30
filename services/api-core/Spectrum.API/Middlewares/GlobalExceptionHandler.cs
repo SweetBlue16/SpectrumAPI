@@ -34,7 +34,8 @@ namespace Spectrum.API.Middlewares
             {
                 Error = exception is SpectrumBusinessException ||
                         exception is SpectrumNotFoundException ||
-                        exception is SpectrumUnauthorizedException
+                        exception is SpectrumUnauthorizedException ||
+                        exception is SpectrumServiceUnavailableException
                         ? exception.Message
                         : "An internal server error has occurred."
             };
@@ -44,6 +45,7 @@ namespace Spectrum.API.Middlewares
                 SpectrumBusinessException => (int)HttpStatusCode.BadRequest,
                 SpectrumUnauthorizedException => (int)HttpStatusCode.Unauthorized,
                 SpectrumNotFoundException => (int)HttpStatusCode.NotFound,
+                SpectrumServiceUnavailableException => (int)HttpStatusCode.ServiceUnavailable,
                 _ => (int)HttpStatusCode.InternalServerError
             };
 

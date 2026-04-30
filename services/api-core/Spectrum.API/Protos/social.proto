@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.spectrum.social.grpc";
+option java_outer_classname = "SocialProto";
+option csharp_namespace = "Spectrum.API.Grpc.Social";
+
+package spectrum.social;
+
+service VoteService {
+  rpc CastVote (CastVoteRequest) returns (VoteResponse);
+}
+
+message CastVoteRequest {
+  string user_id = 1;
+  string target_id = 2;
+  string target_type = 3;
+  bool is_positive = 4;
+}
+
+message VoteResponse {
+  bool success = 1;
+  int32 updated_likes = 2;
+  int32 updated_dislikes = 3;
+}
+
+service CommentService {
+  rpc PublishComment (PublishCommentRequest) returns (CommentResponse);
+  rpc GetCommentsByReview (GetCommentsRequest) returns (stream CommentResponse);
+  rpc DeleteComment (DeleteCommentRequest) returns (DeleteResponse);
+}
+
+message PublishCommentRequest {
+  string user_id = 1;
+  string review_id = 2;
+  string content = 3;
+}
+
+message CommentResponse {
+  string comment_id = 1;
+  string user_id = 2;
+  string review_id = 3;
+  string content = 4;
+  int64 published_at = 5;
+}
+
+message GetCommentsRequest {
+  string review_id = 1;
+  int32 page = 2;
+}
+
+message DeleteCommentRequest {
+  string comment_id = 1;
+  string requester_id = 2;
+  string requester_role = 3;
+}
+
+message DeleteResponse {
+  bool success = 1;
+}
+
+service ReportService {
+  rpc SubmitReport (SubmitReportRequest) returns (ReportResponse);
+  rpc ListReportsByStatus (ListReportsRequest) returns (stream ReportDetails);
+  rpc UpdateReportStatus (UpdateReportStatusRequest) returns (ReportActionResponse);
+}
+
+message SubmitReportRequest {
+  string reporter_id = 1;
+  string target_id = 2;
+  string target_type = 3;
+  string reason = 4;
+}
+
+message ListReportsRequest {
+  string status = 1;
+}
+
+message UpdateReportStatusRequest {
+  string report_id = 1;
+  string moderator_id = 2;
+  string new_status = 3;
+  string resolution_notes = 4;
+}
+
+message ReportDetails {
+  string report_id = 1;
+  string reporter_id = 2;
+  string target_id = 3;
+  string target_type = 4;
+  string reason = 5;
+  string status = 6;
+  int64 reported_at = 7;
+}
+
+message ReportActionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ReportResponse {
+  bool success = 1;
+  string message = 2;
+}

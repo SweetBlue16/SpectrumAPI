@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.spectrum.drops.grpc";
+option java_outer_classname = "DropsProto";
+option csharp_namespace = "Spectrum.API.Grpc.Drops";
+
+package spectrum.drops;
+
+service DropService {
+  rpc ClaimAccessKey (ClaimKeyRequest) returns (ClaimKeyResponse);
+  rpc GetEventStatus (GetEventRequest) returns (EventStatusResponse);
+  rpc GetWonKeys (WonKeysRequest) returns (WonKeysResponse);
+}
+
+message ClaimKeyRequest {
+  string user_id = 1;
+  string event_id = 2;
+}
+
+message ClaimKeyResponse {
+  bool success = 1;
+  string access_key_code = 2;
+  int64 claimed_at = 3;
+}
+
+message GetEventRequest {
+  string event_id = 1;
+}
+
+message EventStatusResponse {
+  string event_id = 1;
+  int32 keys_available = 2;
+  int32 keys_total = 3;
+  string status = 4;
+  int64 end_date = 5;
+}
+
+message WonKeysRequest {
+  string user_id = 1;
+}
+
+message WonKeysResponse {
+  repeated WonKey won_keys = 1;
+}
+
+message WonKey {
+  string event_id = 1;
+  string game_title = 2;
+  string access_key_code = 3;
+  int64 claimed_at = 4;
+}
