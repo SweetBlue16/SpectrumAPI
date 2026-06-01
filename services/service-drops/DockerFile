@@ -1,21 +1,17 @@
-# Etapa 1: Compilar el proyecto con Maven
+# Etapa 1: Compilar el proyecto con Maven usando Debian (gRPC funciona nativo aquí)
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
-
-# COMPATIBILIDAD CRUCIAL PARA gRPC EN LINUX ALPINE:
-# Instala las librerías necesarias para que el compilador de gRPC pueda ejecutarse.
-RUN apk add --no-cache libc6-compat gcompat
 
 # Copiar el archivo de configuración de dependencias (pom.xml)
 COPY services/service-drops/pom.xml ./services/service-drops/
 # Copiar el código fuente completo necesario para compilar
 COPY services/service-drops/src ./services/service-drops/src
 
-# Moverse al directorio del servicio y compilar omitiendo los tests
+# Moverse al directorio del servicio y compilar
 WORKDIR /app/services/service-drops
 RUN mvn clean package -DskipTests
 
-# Etapa 2: Imagen ligera de ejecución para producción
+# Etapa 2: Imagen ligera de ejecución para producción (Aquí sí usamos Alpine)
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
