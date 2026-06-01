@@ -1,5 +1,5 @@
 # Etapa 1: Compilar el proyecto con Maven
-FROM maven:3.9.6-eclipse-temurin-17-alpine AS build
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
 # COMPATIBILIDAD CRUCIAL PARA gRPC EN LINUX ALPINE:
