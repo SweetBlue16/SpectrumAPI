@@ -2,6 +2,10 @@
 FROM maven:3.9.6-eclipse-temurin-17-alpine AS build
 WORKDIR /app
 
+# COMPATIBILIDAD CRUCIAL PARA gRPC EN LINUX ALPINE:
+# Instala las librerías necesarias para que el compilador de gRPC pueda ejecutarse.
+RUN apk add --no-cache libc6-compat gcompat
+
 # Copiar el archivo de configuración de dependencias (pom.xml)
 COPY services/service-drops/pom.xml ./services/service-drops/
 # Copiar el código fuente completo necesario para compilar
