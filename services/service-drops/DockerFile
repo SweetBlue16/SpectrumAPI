@@ -1,0 +1,25 @@
+# Etapa 1: Compilar el proyecto con Maven
+FROM maven:3.9.6-eclipse-temurin-17-alpine AS build
+WORKDIR /app
+
+# Copiar el archivo de configuración de dependencias (pom.xml)
+COPY services/service-drops/pom.xml ./services/service-drops/
+# Copiar el código fuente completo necesario para compilar
+COPY services/service-drops/src ./services/service-drops/src
+
+# Moverse al directorio del servicio y compilar omitiendo los tests
+WORKDIR /app/services/service-drops
+RUN mvn clean package -DskipTests
+
+# Etapa 2: Imagen ligera de ejecución para producción
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# Traer el archivo .jar compilado desde la etapa anterior
+COPY --from=build /app/services/service-drops/target/*.jar app.jar
+
+# Exponer el puerto configurado para gRPC de la sección de drops
+EXPOSE 9090
+
+# Comando para arrancar el microservicio
+ENTRYPOINT ["java", "-jar", "app.jar"]

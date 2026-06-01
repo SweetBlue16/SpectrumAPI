@@ -35,6 +35,54 @@ services:
     networks:
       - spectrum-network
 
+  service-social:
+    build:
+      context: .
+      dockerfile: services/service-social/Dockerfile
+    container_name: spectrum-social
+    restart: always
+    ports:
+      - "9091:9091"
+    depends_on:
+      - mongo-db
+    networks:
+      - spectrum-network
+
+  service-drops:
+    build:
+      context: .
+      dockerfile: services/service-drops/Dockerfile
+    container_name: spectrum-sorteo
+    restart: always
+    ports:
+      - "9090:9090"
+    depends_on:
+      - mongo-db
+    networks:
+      - spectrum-network
+
+  api-core:
+    build:
+      context: .
+      dockerfile: services/api-core/Spectrum.API/Dockerfile
+    container_name: spectrum-api-core
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres-db
+      - service-social
+      - service-drops
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres-db;Port=5432;Database=${DB_POSTGRES_NAME};Username=${DB_POSTGRES_USER};Password=${DB_POSTGRES_PASSWORD};
+      - GrpcSettings__DropsServiceUrl=http://service-drops:9090
+      - GrpcSettings__SocialServiceUrl=http://service-social:9091
+      - DemoSeed__MongoConnectionString=mongodb://${MONGO_INITDB_ROOT_USER}:${MONGO_INITDB_ROOT_PASSWORD}@mongo-db:27017/?authSource=admin
+      - DemoSeed__SocialMongoConnectionString=mongodb://${MONGO_INITDB_ROOT_USER}:${MONGO_INITDB_ROOT_PASSWORD}@mongo-db:27017/${DB_MONGO_SOCIAL_NAME}?authSource=admin
+      - DemoSeed__DropsMongoConnectionString=mongodb://${MONGO_INITDB_ROOT_USER}:${MONGO_INITDB_ROOT_PASSWORD}@mongo-db:27017/${DB_MONGO_DROPS_NAME}?authSource=admin
+    networks:
+      - spectrum-network
+
 volumes:
   postgres_data:
   mongo_data:
