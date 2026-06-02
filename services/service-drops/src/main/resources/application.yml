@@ -1,8 +1,9 @@
 spring:
   config:
     import: optional:file:../../infra/.env[.properties]
-  mongodb:
-    uri: mongodb://${DB_MONGO_USER}:${DB_MONGO_PASSWORD}@${DB_MONGO_HOST:localhost}:${DB_MONGO_PORT:27017}/${DB_MONGO_DROPS_NAME}?authSource=admin
+  data:
+    mongodb:
+      uri: mongodb://${DB_MONGO_USER:spectrum_admin}:${DB_MONGO_PASSWORD:SpectrumPassword050911!}@${DB_MONGO_HOST:localhost}:${DB_MONGO_PORT:27017}/${DB_MONGO_DROPS_NAME:spectrum_drops}?authSource=admin
 
 grpc:
   server:
