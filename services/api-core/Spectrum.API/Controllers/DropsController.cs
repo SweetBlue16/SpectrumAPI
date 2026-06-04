@@ -28,13 +28,15 @@ namespace Spectrum.API.Controllers
             CancellationToken cancellationToken = default
         )
         {
+            var currentUserId = GetCurrentUserId();
             var events = await _dropsService.ListEventsAsync(
                 scope,
                 page,
                 pageSize,
                 includeDrafts: false,
                 exposeChallengeCode: false,
-                cancellationToken
+                cancellationToken,
+                currentUserId
             );
             return Ok(events);
         }
@@ -42,7 +44,7 @@ namespace Spectrum.API.Controllers
         [HttpGet("event/{eventId}")]
         public async Task<IActionResult> GetStatus(string eventId, CancellationToken cancellationToken)
         {
-            var status = await _dropsService.GetEventStatusAsync(eventId, exposeChallengeCode: false, cancellationToken);
+            var status = await _dropsService.GetEventStatusAsync(eventId, exposeChallengeCode: false, cancellationToken, GetCurrentUserId());
             return Ok(status);
         }
 

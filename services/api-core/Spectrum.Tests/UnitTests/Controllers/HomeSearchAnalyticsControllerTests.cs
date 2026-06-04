@@ -18,7 +18,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
         {
             var serviceMock = new Mock<IHomeDashboardService>();
             serviceMock
-                .Setup(service => service.GetDashboardAsync(It.IsAny<CancellationToken>(), It.IsAny<Guid?>()))
+                .Setup(service => service.GetDashboardAsync(It.IsAny<CancellationToken>(), It.IsAny<Guid?>(), It.IsAny<bool>()))
                 .ReturnsAsync(new HomeDashboardDto
                 {
                     BannerTitle = "SPECTRUM",

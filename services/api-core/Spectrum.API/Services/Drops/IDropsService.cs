@@ -15,8 +15,8 @@ namespace Spectrum.API.Services.Drops
         Task<DropActionResultDto> FinishEventAsync(string eventId, bool cancelIfWithoutWinner, CancellationToken cancellationToken);
         Task<DropActionResultDto> JoinEventAsync(Guid userId, string eventId, CancellationToken cancellationToken);
         Task<ClaimDropResultDto> ClaimAccessKeyAsync(Guid userId, string eventId, ClaimDropDto dto, CancellationToken cancellationToken);
-        Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken);
-        Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, bool exposeChallengeCode, CancellationToken cancellationToken);
+        Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
+        Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
         Task<DropActionResultDto> SendRewardAsync(Guid adminId, string eventId, SendRewardDto dto, CancellationToken cancellationToken);
         Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken);
     }
@@ -74,7 +74,7 @@ namespace Spectrum.API.Services.Drops
         public async Task<DropActionResultDto> UpdateEventAsync(string eventId, UpdateDropEventDto dto, CancellationToken cancellationToken)
         {
             var current = await GetEventStatusAsync(eventId, exposeChallengeCode: false, cancellationToken);
-            if (!CanEditEvent(current.Status))
+            if (!CanEditEvent(current))
             {
                 throw new SpectrumBusinessException("dropEventNotEditable");
             }
@@ -164,7 +164,7 @@ namespace Spectrum.API.Services.Drops
 
                 if (response.Success && !string.IsNullOrWhiteSpace(response.AccessKeyCode))
                 {
-                    await DeliverClaimedRewardAsync(user.Email, eventId, response.AccessKeyCode, cancellationToken);
+                    await DeliverClaimedRewardAsync(user.Email, userId, eventId, response.AccessKeyCode, cancellationToken);
                 }
 
                 return new ClaimDropResultDto
@@ -184,13 +184,19 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
-        public async Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken)
+        public async Task<EventStatusDto> GetEventStatusAsync(
+            string eventId,
+            bool exposeChallengeCode,
+            CancellationToken cancellationToken,
+            Guid? currentUserId = null
+        )
         {
             try
             {
                 var response = await _dropServiceClient.GetEventStatusAsync(new GetEventRequest
                 {
-                    EventId = eventId
+                    EventId = eventId,
+                    RequesterUserId = currentUserId?.ToString() ?? string.Empty
                 }, cancellationToken: cancellationToken);
 
                 if (response.Status == "NOT_FOUND")
@@ -213,7 +219,8 @@ namespace Spectrum.API.Services.Drops
             int pageSize,
             bool includeDrafts,
             bool exposeChallengeCode,
-            CancellationToken cancellationToken
+            CancellationToken cancellationToken,
+            Guid? currentUserId = null
         )
         {
             var normalizedPage = Math.Max(1, page);
@@ -226,7 +233,8 @@ namespace Spectrum.API.Services.Drops
                     Scope = scope.ToUpperInvariant(),
                     Page = normalizedPage,
                     PageSize = normalizedPageSize,
-                    IncludeDrafts = includeDrafts
+                    IncludeDrafts = includeDrafts,
+                    RequesterUserId = currentUserId?.ToString() ?? string.Empty
                 }, cancellationToken: cancellationToken);
 
                 return new PagedResult<EventStatusDto>
@@ -322,6 +330,7 @@ namespace Spectrum.API.Services.Drops
 
         private async Task DeliverClaimedRewardAsync(
             string recipientEmail,
+            Guid winnerUserId,
             string eventId,
             string rewardCode,
             CancellationToken cancellationToken
@@ -336,6 +345,12 @@ namespace Spectrum.API.Services.Drops
                     rewardCode,
                     cancellationToken
                 );
+                await _dropServiceClient.MarkRewardSentAsync(new MarkRewardSentRequest
+                {
+                    EventId = eventId,
+                    WinnerUserId = winnerUserId.ToString(),
+                    RewardSentAt = ToUnixMilliseconds(DateTime.UtcNow)
+                }, cancellationToken: cancellationToken);
             }
             catch (Exception ex)
             {
@@ -368,6 +383,12 @@ namespace Spectrum.API.Services.Drops
                 AvailableSlots = response.AvailableSlots,
                 Status = response.Status,
                 PublicChallengeCode = string.Empty,
+                CurrentUserJoined = response.CurrentUserJoined,
+                CanJoin = response.CanJoin,
+                CanClaim = response.CanClaim,
+                HasClaimed = response.HasClaimed,
+                RemainingSlots = response.RemainingSlots > 0 ? response.RemainingSlots : response.AvailableSlots,
+                VisibleUntil = response.VisibleUntil <= 0 ? null : FromUnixMilliseconds(response.VisibleUntil),
                 CreatedByAdminId = response.CreatedByAdminId,
                 WinnerUserId = string.IsNullOrWhiteSpace(response.WinnerUserId) ? null : response.WinnerUserId,
                 WinnerUsername = string.IsNullOrWhiteSpace(response.WinnerUsername) ? null : response.WinnerUsername,
@@ -402,11 +423,15 @@ namespace Spectrum.API.Services.Drops
             };
         }
 
-        private static bool CanEditEvent(string status)
+        private static bool CanEditEvent(EventStatusDto eventStatus)
         {
-            return status.Equals("UPCOMING", StringComparison.OrdinalIgnoreCase) ||
-                   status.Equals("SCHEDULED", StringComparison.OrdinalIgnoreCase) ||
-                   status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase);
+            var editableStatus = eventStatus.Status.Equals("UPCOMING", StringComparison.OrdinalIgnoreCase) ||
+                                 eventStatus.Status.Equals("SCHEDULED", StringComparison.OrdinalIgnoreCase) ||
+                                 eventStatus.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase);
+
+            return editableStatus &&
+                   eventStatus.Winners.Count == 0 &&
+                   DateTime.UtcNow < eventStatus.StartAt.ToUniversalTime().AddMinutes(-10);
         }
 
         private static void ValidateEvent(

@@ -61,6 +61,18 @@ namespace Spectrum.API.Services.Email
         {
             return SendCustomAsync(
                 email,
+                "Ganaste un codigo en Spectrum",
+                "Ganaste un codigo en Spectrum",
+                $"Felicidades, ganaste un codigo para el juego {eventTitle}. Tu codigo es:",
+                rewardCode,
+                "Que lo disfrutes. De parte de Spectrum."
+            );
+        }
+
+        private Task SendLegacyGiveawayWinnerEmailAsync(string email, string eventTitle, string rewardCode)
+        {
+            return SendCustomAsync(
+                email,
                 $"Tu recompensa de Spectrum: {eventTitle}",
                 "Ganaste un sorteo en Spectrum",
                 $"Felicidades. Ganaste el sorteo {eventTitle}. Tienes 24 horas para canjear este código:",

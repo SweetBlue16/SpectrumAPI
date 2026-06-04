@@ -11,7 +11,7 @@ namespace Spectrum.API.Services.Home
 {
     public interface IHomeDashboardService
     {
-        Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
+        Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null, bool isAdmin = false);
     }
 
     public class HomeDashboardService : IHomeDashboardService
@@ -37,7 +37,7 @@ namespace Spectrum.API.Services.Home
             _voteService = voteService;
         }
 
-        public async Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
+        public async Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null, bool isAdmin = false)
         {
             var today = DateTime.UtcNow.Date;
             var weekEnd = today.AddDays(7);
@@ -88,7 +88,8 @@ namespace Spectrum.API.Services.Home
                 pageSize: 8,
                 includeDrafts: false,
                 exposeChallengeCode: false,
-                cancellationToken
+                cancellationToken,
+                currentUserId
             );
 
             var upcomingDrops = await _dropsService.ListEventsAsync(
@@ -97,7 +98,8 @@ namespace Spectrum.API.Services.Home
                 pageSize: 8,
                 includeDrafts: false,
                 exposeChallengeCode: false,
-                cancellationToken
+                cancellationToken,
+                currentUserId
             );
 
             return new HomeDashboardDto
@@ -108,6 +110,7 @@ namespace Spectrum.API.Services.Home
                         review,
                         GetCommentCount(commentCounts, review.Id),
                         currentUserId,
+                        isAdmin,
                         currentUserVotes.GetValueOrDefault(review.Id)
                     ))
                     .ToList(),
@@ -125,7 +128,7 @@ namespace Spectrum.API.Services.Home
             return counts.TryGetValue(reviewId, out var count) ? count : 0;
         }
 
-        private HomeReviewDto MapReview(Models.Review review, int commentsCount, Guid? currentUserId, string? currentUserVote)
+        private HomeReviewDto MapReview(Models.Review review, int commentsCount, Guid? currentUserId, bool isAdmin, string? currentUserVote)
         {
             var game = _gameRepository.GetById(review.GameId);
             var profileImageUrl = review.User?.ProfilePicture ?? string.Empty;
@@ -151,6 +154,8 @@ namespace Spectrum.API.Services.Home
                 CurrentUserVote = resolvedUserVote,
                 UserVote = resolvedUserVote,
                 MyVote = resolvedUserVote,
+                IsOwnReview = isOwnReview,
+                CanVote = !isOwnReview && !isAdmin,
                 CommentsCount = commentsCount,
                 CreatedAt = review.CreatedAt
             };

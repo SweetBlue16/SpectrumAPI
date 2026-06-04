@@ -22,6 +22,8 @@ namespace Spectrum.API.Dtos.Home
         public string? CurrentUserVote { get; set; }
         public string? UserVote { get; set; }
         public string? MyVote { get; set; }
+        public bool IsOwnReview { get; set; }
+        public bool CanVote { get; set; } = true;
         public int CommentsCount { get; set; }
         public DateTime CreatedAt { get; set; }
     }

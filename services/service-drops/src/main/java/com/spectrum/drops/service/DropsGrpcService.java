@@ -39,9 +39,14 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     private static final String REVEALED = "REVEALED";
     private static final String UPCOMING = "UPCOMING";
     private static final String ACTIVE_JOIN = "ACTIVE_JOIN";
+    private static final String REGISTRATION_OPEN = "REGISTRATION_OPEN";
+    private static final String FULL = "FULL";
+    private static final String REGISTRATION_CLOSED = "REGISTRATION_CLOSED";
     private static final String REVEAL_ACTIVE = "REVEAL_ACTIVE";
+    private static final String REVEAL_READY = "REVEAL_READY";
     private static final String EXHAUSTED = "EXHAUSTED";
     private static final String FINISHED = "FINISHED";
+    private static final String EXPIRED = "EXPIRED";
     private static final String CANCELLED = "CANCELLED";
     private static final String REWARD_PENDING = "PENDING";
     private static final String REWARD_SENT = "SENT";
@@ -49,6 +54,8 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     private static final int MAX_MEDIUM_TEXT_LENGTH = 300;
     private static final int MAX_URL_LENGTH = 255;
     private static final int MAX_REWARD_CODE_LENGTH = 50;
+    private static final long EDIT_LOCK_MILLIS = 10 * 60 * 1000L;
+    private static final long PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS = 60 * 60 * 1000L;
 
     private static final String STATUS_FIELD = "status";
     private static final String EVENT_ID_FIELD = "_id";
@@ -130,6 +137,10 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
             Event event = eventRepository.findById(request.getEventId())
                     .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+
+            if (!canEditEvent(event, Instant.now().toEpochMilli())) {
+                throw new IllegalStateException("Este sorteo ya no puede editarse porque esta proximo a iniciar.");
+            }
 
             if (hasWinners(event)) {
                 throw new IllegalStateException("Finished events with a winner cannot be edited.");
@@ -245,7 +256,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
             long now = Instant.now().toEpochMilli();
             Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
-                    .and(STATUS_FIELD).in(SCHEDULED, ACTIVE, UPCOMING, ACTIVE_JOIN)
+                    .and(STATUS_FIELD).in(SCHEDULED, ACTIVE, UPCOMING, ACTIVE_JOIN, REGISTRATION_OPEN)
                     .and("startAt").lte(now)
                     .and("joinDeadlineAt").gte(now)
                     .and("availableSlots").gt(0));
@@ -283,6 +294,14 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         }
     }
 
+    /**
+     * Attempts to assign one reward code to a registered participant using a
+     * MongoDB atomic find-and-modify operation so concurrent claimers cannot
+     * receive the same code.
+     *
+     * @param request claim request with event, user and display username.
+     * @param responseObserver gRPC observer receiving the controlled claim result.
+     */
     @Override
     public void claimAccessKey(ClaimKeyRequest request, StreamObserver<ClaimKeyResponse> responseObserver) {
         try {
@@ -297,7 +316,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
             long now = Instant.now().toEpochMilli();
             Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
-                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED, FINISHED, EXHAUSTED)
+                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED, FINISHED, EXHAUSTED, EXPIRED)
                     .and("revealAt").lte(now)
                     .and("endAt").gte(now)
                     .and("rewardCodes").elemMatch(Criteria.where("claimed").is(false))
@@ -404,7 +423,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             Event event = eventRepository.findById(request.getEventId())
                     .orElseThrow(() -> new IllegalArgumentException("Event not found."));
 
-            responseObserver.onNext(toResponse(event));
+            responseObserver.onNext(toResponse(event, request.getRequesterUserId()));
             responseObserver.onCompleted();
         } catch (Exception e) {
             log.warn("Error fetching event status {}: {}", request.getEventId(), e.getMessage());
@@ -438,7 +457,12 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     .setPage(page)
                     .setPageSize(pageSize);
 
-            events.forEach(event -> builder.addEvents(toResponse(event)));
+            Set<String> joinedEventIds = joinedEventIdsForRequester(request.getRequesterUserId(), events);
+            events.forEach(event -> builder.addEvents(toResponse(
+                    event,
+                    request.getRequesterUserId(),
+                    joinedEventIds.contains(event.getId())
+            )));
             responseObserver.onNext(builder.build());
             responseObserver.onCompleted();
         } catch (Exception e) {
@@ -455,26 +479,32 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     public void markRewardSent(MarkRewardSentRequest request, StreamObserver<EventActionResponse> responseObserver) {
         try {
             validateEventId(request.getEventId());
-            Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
-                    .and(STATUS_FIELD).in(FINISHED, EXHAUSTED)
+            Criteria criteria = Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
+                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED)
                     .orOperator(
                             Criteria.where("winnerUserId").ne(null),
                             Criteria.where("winners.0").exists(true)
-                    ));
-
+                    );
             Update update = new Update()
                     .set("rewardSentAt", request.getRewardSentAt())
                     .set("rewardDeliveryStatus", REWARD_SENT);
+            if (!request.getWinnerUserId().isBlank()) {
+                criteria = criteria.and("winners.userId").is(request.getWinnerUserId());
+                update
+                        .set("winners.$.deliveryStatus", REWARD_SENT)
+                        .filterArray(Criteria.where("rewardCode.claimedByUserId").is(request.getWinnerUserId()))
+                        .set("rewardCodes.$[rewardCode].deliveryStatus", REWARD_SENT);
+            }
 
             Event updated = mongoTemplate.findAndModify(
-                    query,
+                    new Query(criteria),
                     update,
                     FindAndModifyOptions.options().returnNew(true),
                     Event.class
             );
 
             if (updated == null) {
-                throw new IllegalStateException("Reward can only be marked sent for finished events with a winner.");
+                throw new IllegalStateException("Reward can only be marked sent for events with a matching winner.");
             }
 
             sendActionSuccess(responseObserver, updated.getId(), "Reward marked as sent.");
@@ -542,12 +572,15 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         Criteria scopeCriteria = switch (scope == null ? "" : scope.toUpperCase()) {
             case "CURRENT" -> new Criteria().andOperator(
                     Criteria.where("startAt").lte(now),
-                    Criteria.where("endAt").gte(now),
-                    Criteria.where(STATUS_FIELD).nin(DRAFT, CANCELLED, FINISHED, EXHAUSTED)
+                    new Criteria().orOperator(
+                            Criteria.where("endAt").gte(now),
+                            Criteria.where("finishedAt").gte(now - PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS)
+                    ),
+                    Criteria.where(STATUS_FIELD).nin(DRAFT, CANCELLED, EXPIRED)
             );
             case "UPCOMING" -> Criteria.where("startAt").gt(now);
             case "PAST" -> new Criteria().orOperator(
-                    Criteria.where(STATUS_FIELD).in(FINISHED, EXHAUSTED, CANCELLED),
+                    Criteria.where(STATUS_FIELD).in(FINISHED, EXHAUSTED, CANCELLED, EXPIRED),
                     Criteria.where("endAt").lt(now)
             );
             default -> null;
@@ -561,9 +594,23 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                 : new Criteria().andOperator(criteria.toArray(Criteria[]::new));
     }
 
-    private EventStatusResponse toResponse(Event event) {
-        String status = resolveDisplayStatus(event, Instant.now().toEpochMilli());
+    private EventStatusResponse toResponse(Event event, String requesterUserId) {
+        return toResponse(event, requesterUserId, null);
+    }
+
+    private EventStatusResponse toResponse(Event event, String requesterUserId, Boolean currentUserJoinedOverride) {
+        long now = Instant.now().toEpochMilli();
+        String status = resolveDisplayStatus(event, now);
         Winner winner = firstWinner(event);
+        boolean currentUserJoined = hasRequester(requesterUserId)
+                && (currentUserJoinedOverride != null
+                ? currentUserJoinedOverride
+                : participantRepository.existsByEventIdAndUserId(event.getId(), requesterUserId));
+        boolean hasClaimed = hasRequester(requesterUserId)
+                && event.getWinners() != null
+                && event.getWinners().stream().anyMatch(item -> requesterUserId.equals(item.getUserId()));
+        boolean canJoin = isJoinOpenStatus(status) && event.getAvailableSlots() > 0;
+        boolean canClaim = currentUserJoined && !hasClaimed && REVEAL_READY.equals(status) && event.getKeysAvailable() > 0;
         EventStatusResponse.Builder builder = EventStatusResponse.newBuilder()
                 .setEventId(nullToEmpty(event.getId()))
                 .setKeysAvailable(event.getKeysAvailable())
@@ -590,7 +637,13 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                 .setRewardDeliveryStatus(nullToEmpty(event.getRewardDeliveryStatus()))
                 .setParticipantsCount(event.getParticipantsCount())
                 .setRewardCodesTotal(event.getKeysTotal())
-                .setRewardCodesAvailable(event.getKeysAvailable());
+                .setRewardCodesAvailable(event.getKeysAvailable())
+                .setCurrentUserJoined(currentUserJoined)
+                .setCanJoin(canJoin)
+                .setCanClaim(canClaim)
+                .setHasClaimed(hasClaimed)
+                .setVisibleUntil(resolveVisibleUntil(event))
+                .setRemainingSlots(Math.max(0, event.getAvailableSlots()));
         if (event.getWinners() != null) {
             event.getWinners().forEach(item -> builder.addWinners(WinnerStatus.newBuilder()
                     .setUserId(nullToEmpty(item.getUserId()))
@@ -602,31 +655,81 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         return builder.build();
     }
 
+    private Set<String> joinedEventIdsForRequester(String requesterUserId, List<Event> events) {
+        if (!hasRequester(requesterUserId) || events == null || events.isEmpty()) {
+            return Set.of();
+        }
+
+        Set<String> visibleEventIds = new HashSet<>();
+        events.forEach(event -> visibleEventIds.add(event.getId()));
+        Set<String> joinedEventIds = new HashSet<>();
+        participantRepository.findByUserId(requesterUserId).forEach(participant -> {
+            if (visibleEventIds.contains(participant.getEventId())) {
+                joinedEventIds.add(participant.getEventId());
+            }
+        });
+        return joinedEventIds;
+    }
+
     private String resolveDisplayStatus(Event event, long now) {
         if (DRAFT.equals(event.getStatus()) ||
-                CANCELLED.equals(event.getStatus()) ||
-                FINISHED.equals(event.getStatus()) ||
-                EXHAUSTED.equals(event.getStatus())) {
+                CANCELLED.equals(event.getStatus())) {
             return event.getStatus();
+        }
+
+        if (FINISHED.equals(event.getStatus()) || EXHAUSTED.equals(event.getStatus())) {
+            return resolveVisibleUntil(event) > now ? event.getStatus() : EXPIRED;
         }
 
         if (now < event.getStartAt()) {
             return UPCOMING;
         }
 
+        if (event.getAvailableSlots() <= 0 && now <= event.getJoinDeadlineAt()) {
+            return FULL;
+        }
+
         if (now <= event.getJoinDeadlineAt()) {
-            return ACTIVE_JOIN;
+            return REGISTRATION_OPEN;
+        }
+
+        if (now < event.getRevealAt()) {
+            return REGISTRATION_CLOSED;
         }
 
         if (now <= event.getEndAt()) {
-            return now >= event.getRevealAt() ? REVEAL_ACTIVE : ACTIVE_JOIN;
+            return event.getKeysAvailable() <= 0 ? EXHAUSTED : REVEAL_READY;
         }
 
-        return FINISHED;
+        return resolveVisibleUntil(event) > now ? FINISHED : EXPIRED;
     }
 
     private String initialPublishedStatus(long startAt, long now) {
-        return now >= startAt ? ACTIVE_JOIN : UPCOMING;
+        return now >= startAt ? REGISTRATION_OPEN : UPCOMING;
+    }
+
+    private boolean canEditEvent(Event event, long now) {
+        if (event == null || FINISHED.equals(event.getStatus()) || EXHAUSTED.equals(event.getStatus()) ||
+                CANCELLED.equals(event.getStatus()) || hasWinners(event)) {
+            return false;
+        }
+
+        return now < event.getStartAt() - EDIT_LOCK_MILLIS;
+    }
+
+    private boolean isJoinOpenStatus(String status) {
+        return REGISTRATION_OPEN.equals(status) || ACTIVE_JOIN.equals(status);
+    }
+
+    private boolean hasRequester(String requesterUserId) {
+        return requesterUserId != null && !requesterUserId.isBlank();
+    }
+
+    private long resolveVisibleUntil(Event event) {
+        long finishedAt = event.getFinishedAt() == null || event.getFinishedAt() <= 0
+                ? event.getEndAt()
+                : event.getFinishedAt();
+        return finishedAt + PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS;
     }
 
     private void validateEventPayload(

@@ -141,6 +141,10 @@ namespace Spectrum.API.Controllers
         )
         {
             var userId = GetCurrentUserId();
+            if (IsCurrentUserAdmin())
+            {
+                throw new SpectrumForbiddenException("Los administradores no pueden votar resenas.");
+            }
 
             var result = await _voteService.CastReviewVoteAsync(
                 reviewId,

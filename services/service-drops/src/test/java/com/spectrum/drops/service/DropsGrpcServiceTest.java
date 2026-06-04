@@ -422,8 +422,60 @@ class DropsGrpcServiceTest {
         dropsGrpcService.getEventStatus(GetEventRequest.newBuilder().setEventId("event-1").build(), observer);
 
         assertEquals("event-1", observer.value.getEventId());
-        assertEquals("ACTIVE_JOIN", observer.value.getStatus());
+        assertEquals("REGISTRATION_OPEN", observer.value.getStatus());
         assertEquals(10, observer.value.getTotalSlots());
+    }
+
+    @Test
+    void getEventStatusWhenRequesterJoinedAfterRevealShouldAllowClaim() {
+        String eventId = "event-claim-ready";
+        String userId = "user-ready";
+        Event event = activeEvent(eventId);
+        long now = Instant.now().toEpochMilli();
+        event.setJoinDeadlineAt(now - 5_000);
+        event.setRevealAt(now - 1_000);
+        event.setEndAt(now + 20_000);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setRequesterUserId(userId)
+                .build(), observer);
+
+        assertEquals("REVEAL_READY", observer.value.getStatus());
+        assertTrue(observer.value.getCurrentUserJoined());
+        assertTrue(observer.value.getCanClaim());
+    }
+
+    @Test
+    void markRewardSentWhenWinnerUserMatchesShouldUpdateDeliveryStatus() {
+        String eventId = "event-sent";
+        Event updated = activeEvent(eventId);
+        updated.setWinners(List.of(Winner.builder()
+                .userId("winner-1")
+                .username("winner")
+                .rewardCode("KEY-1")
+                .claimedAt(Instant.now().toEpochMilli())
+                .deliveryStatus("SENT")
+                .build()));
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenReturn(updated);
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.markRewardSent(MarkRewardSentRequest.newBuilder()
+                .setEventId(eventId)
+                .setWinnerUserId("winner-1")
+                .setRewardSentAt(Instant.now().toEpochMilli())
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        verify(mongoTemplate).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
     }
 
     private static Event activeEvent(String eventId) {

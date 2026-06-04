@@ -55,10 +55,45 @@ namespace Spectrum.Tests.UnitTests.Services
                 .Returns(CreateAsyncUnaryCall(new ClaimKeyResponse
                 {
                     Success = true,
+                    AccessKeyCode = "WIN-KEY",
                     WinnerUserId = userId.ToString(),
                     WinnerUsername = "neo",
                     ClaimedAt = claimedAtEpoch,
                     Message = "Winner assigned."
+                }));
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(
+                    It.Is<GetEventRequest>(request => request.EventId == eventId),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = eventId,
+                    Title = "Launch Drop",
+                    GameTitle = "Halo",
+                    Platform = "PC",
+                    Status = "REVEAL_READY",
+                    StartAt = claimedAtEpoch,
+                    JoinDeadlineAt = claimedAtEpoch,
+                    RevealAt = claimedAtEpoch,
+                    EndDate = claimedAtEpoch,
+                    TotalSlots = 10
+                }));
+            _grpcClientMock
+                .Setup(client => client.MarkRewardSentAsync(
+                    It.Is<MarkRewardSentRequest>(request =>
+                        request.EventId == eventId &&
+                        request.WinnerUserId == userId.ToString() &&
+                        request.RewardSentAt > 0),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventActionResponse
+                {
+                    Success = true,
+                    EventId = eventId,
+                    Message = "Reward marked as sent."
                 }));
 
             var result = await _dropService.ClaimAccessKeyAsync(
@@ -71,6 +106,58 @@ namespace Spectrum.Tests.UnitTests.Services
             Assert.True(result.Success);
             Assert.Equal("neo", result.WinnerUsername);
             Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(claimedAtEpoch).UtcDateTime, result.ClaimedAt);
+            _rewardDeliveryServiceMock.Verify(service => service.SendRewardAsync(
+                "neo@spectrum.test",
+                "Halo - PC",
+                "WIN-KEY",
+                It.IsAny<CancellationToken>()), Times.Once);
+            _grpcClientMock.Verify(client => client.MarkRewardSentAsync(
+                It.Is<MarkRewardSentRequest>(request =>
+                    request.EventId == eventId &&
+                    request.WinnerUserId == userId.ToString()),
+                null,
+                null,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetEventStatusAsyncWhenRequesterExistsShouldMapUserDropFlags()
+        {
+            var userId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(
+                    It.Is<GetEventRequest>(request => request.EventId == "event-joined" && request.RequesterUserId == userId.ToString()),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = "event-joined",
+                    Title = "Launch Drop",
+                    GameTitle = "Halo",
+                    Platform = "PC",
+                    Status = "REVEAL_READY",
+                    StartAt = now,
+                    JoinDeadlineAt = now,
+                    RevealAt = now,
+                    EndDate = now,
+                    TotalSlots = 10,
+                    AvailableSlots = 3,
+                    RemainingSlots = 3,
+                    CurrentUserJoined = true,
+                    CanClaim = true,
+                    HasClaimed = false,
+                    VisibleUntil = now + 3_600_000
+                }));
+
+            var result = await _dropService.GetEventStatusAsync("event-joined", false, CancellationToken.None, userId);
+
+            Assert.True(result.CurrentUserJoined);
+            Assert.True(result.CanClaim);
+            Assert.False(result.HasClaimed);
+            Assert.Equal(3, result.RemainingSlots);
+            Assert.NotNull(result.VisibleUntil);
         }
 
         [Fact]
