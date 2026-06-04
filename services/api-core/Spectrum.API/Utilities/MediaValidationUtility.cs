@@ -13,6 +13,10 @@ namespace Spectrum.API.Utilities
     /// </summary>
     public static class MediaValidationUtility
     {
+        public const int MaximumImageSizeMb = 5;
+        public const int MaximumVideoSizeMb = 60;
+        public const int MaximumVideoDurationSeconds = 16;
+
         /// <summary>
         /// Orchestrates the validation for image files.
         /// </summary>
@@ -38,13 +42,13 @@ namespace Spectrum.API.Utilities
         {
             if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             {
-                ValidateImage(file, maxSizeMb: 5);
+                ValidateImage(file, maxSizeMb: MaximumImageSizeMb);
                 return;
             }
 
             if (file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
             {
-                ValidateFileSize(file, 20, "video");
+                ValidateFileSize(file, MaximumVideoSizeMb, "video");
                 ValidateContentType(file, new[] { "video/mp4", "video/quicktime" }, "video");
                 ValidateFileExtension(file, new[] { ".mp4", ".mov" }, "video");
                 return;

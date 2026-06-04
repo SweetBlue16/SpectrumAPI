@@ -23,7 +23,7 @@ namespace Spectrum.API.Services.Drops
 
     public class DropsService : IDropsService
     {
-        private const int MaximumRewardLength = 50;
+        private const int MaximumRewardLength = InputValidationLimits.DropRewardCode;
 
         private readonly DropService.DropServiceClient _dropServiceClient;
         private readonly IUserRepository _userRepository;

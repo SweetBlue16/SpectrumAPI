@@ -9,5 +9,9 @@ namespace Spectrum.API.Services.Email
         Task SendReviewDeletedAsync(string email, string reviewTitle);
         Task SendClipDeletedAsync(string email, string clipTitle);
         Task SendAccountSuspendedAsync(string email);
+        Task SendAccountBannedAsync(string email);
+        Task SendAccountReactivatedAsync(string email);
+        Task SendReportActionAsync(string email, string actionSummary);
+        Task SendGiveawayWinnerEmailAsync(string email, string eventTitle, string rewardCode);
     }
 }

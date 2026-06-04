@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Spectrum.API.Data;
 using Spectrum.API.Dtos.Analytics;
 using Spectrum.API.Repositories;
+using Spectrum.API.Services.Votes;
 using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Analytics
@@ -9,8 +10,8 @@ namespace Spectrum.API.Services.Analytics
     public interface IAnalyticsService
     {
         Task<GlobalMetricsDto> GetGlobalMetricsAsync(string period, DateTime? anchorDate, CancellationToken cancellationToken = default);
-        Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default);
-        Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default);
+        Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
+        Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
         Task<CryptDashboardDto> GetCryptDashboardAsync(CancellationToken cancellationToken = default);
         Task<PagedResult<WeeklyReviewDto>> GetWeeklyClipsAsync(int page, int pageSize, Guid? currentUserId = null, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<WeeklyReviewDto>> GetMonthlyTopClipsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
@@ -24,16 +25,19 @@ namespace Spectrum.API.Services.Analytics
         private readonly SpectrumDbContext _context;
         private readonly IGameRepository _gameRepository;
         private readonly ICommentAnalyticsService _commentAnalyticsService;
+        private readonly IVoteService _voteService;
 
         public AnalyticsService(
             SpectrumDbContext context,
             IGameRepository gameRepository,
-            ICommentAnalyticsService commentAnalyticsService
+            ICommentAnalyticsService commentAnalyticsService,
+            IVoteService voteService
         )
         {
             _context = context;
             _gameRepository = gameRepository;
             _commentAnalyticsService = commentAnalyticsService;
+            _voteService = voteService;
         }
 
         public async Task<GlobalMetricsDto> GetGlobalMetricsAsync(
@@ -73,7 +77,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
-        public async Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default)
+        public async Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
         {
             var window = ResolveWeeklyWindow(DateTime.UtcNow);
             var topGames = await _context.Reviews
@@ -106,6 +110,7 @@ namespace Spectrum.API.Services.Analytics
                 .OrderByDescending(review => review.LikesCount)
                 .ThenByDescending(review => review.CreatedAt)
                 .ToListAsync(cancellationToken);
+            var userVotes = await ResolveReviewVotesAsync(reviews.Select(review => review.Id), currentUserId, cancellationToken);
 
             var rank = 1;
             var games = topGames
@@ -122,7 +127,13 @@ namespace Spectrum.API.Services.Analytics
                         Reviews = reviews
                             .Where(review => review.GameId == game.GameId)
                             .Take(ReviewsPerTrendGame)
-                            .Select(review => MapWeeklyReview(review, metadata?.Title, metadata?.CoverImageUrl))
+                            .Select(review => MapWeeklyReview(
+                                review,
+                                metadata?.Title,
+                                metadata?.CoverImageUrl,
+                                currentUserId: currentUserId,
+                                currentUserVote: userVotes.GetValueOrDefault(review.Id)
+                            ))
                             .ToList()
                     };
                 })
@@ -136,7 +147,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
-        public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default)
+        public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
         {
             var week = ResolveWeeklyWindow(DateTime.UtcNow);
             var month = ResolveWindow("month", DateTime.UtcNow);
@@ -159,6 +170,11 @@ namespace Spectrum.API.Services.Analytics
                 week.End,
                 cancellationToken
             );
+            var weeklyUserVotes = await ResolveReviewVotesAsync(
+                weeklyReviews.Select(review => review.Id),
+                currentUserId,
+                cancellationToken
+            );
 
             var monthlyPlatformPreferences = await _context.Users
                 .AsNoTracking()
@@ -169,7 +185,11 @@ namespace Spectrum.API.Services.Analytics
                 {
                     Id = group.Key.Id.ToString(),
                     Label = group.Key.Name,
-                    Count = group.Count()
+                    Count = group.Count(),
+                    PlatformName = group.Key.Name,
+                    ConsoleName = group.Key.Name,
+                    IconUrl = null,
+                    PlatformIconUrl = null
                 })
                 .OrderByDescending(metric => metric.Count)
                 .Take(5)
@@ -190,20 +210,36 @@ namespace Spectrum.API.Services.Analytics
                     .Select(review =>
                     {
                         var game = _gameRepository.GetById(review.GameId);
-                        return MapWeeklyReview(review, game?.Title, game?.CoverImageUrl, GetCommentCount(weeklyCommentCounts, review.Id));
+                        return MapWeeklyReview(
+                            review,
+                            game?.Title,
+                            game?.CoverImageUrl,
+                            GetCommentCount(weeklyCommentCounts, review.Id),
+                            currentUserId,
+                            weeklyUserVotes.GetValueOrDefault(review.Id)
+                        );
                     })
                     .ToList(),
                 WorstOfWeek = BuildRatingMetrics(weeklyReviews, takeWorst: true, limit: 3),
                 BestOfWeek = BuildRatingMetrics(weeklyReviews, takeWorst: false, limit: 3),
                 ConsoleOfMonth = monthlyPlatformPreferences,
                 TopReviewersOfMonth = monthlyReviews
-                    .GroupBy(review => new { review.UserId, Username = review.User?.Username ?? "Usuario Spectrum" })
+                    .GroupBy(review => new
+                    {
+                        review.UserId,
+                        Username = review.User?.Username ?? "Usuario Spectrum",
+                        ProfilePicture = review.User?.ProfilePicture ?? string.Empty
+                    })
                     .Select(group => new NamedMetricDto
                     {
                         Id = group.Key.UserId.ToString(),
                         Label = group.Key.Username,
                         Count = group.Count(),
-                        Score = group.Sum(review => review.LikesCount)
+                        Score = group.Sum(review => review.LikesCount),
+                        UserId = group.Key.UserId,
+                        Username = group.Key.Username,
+                        ProfileImageUrl = string.IsNullOrWhiteSpace(group.Key.ProfilePicture) ? null : group.Key.ProfilePicture,
+                        UserProfileImageUrl = string.IsNullOrWhiteSpace(group.Key.ProfilePicture) ? null : group.Key.ProfilePicture
                     })
                     .OrderByDescending(metric => metric.Score)
                     .ThenBy(metric => metric.Label)
@@ -240,6 +276,9 @@ namespace Spectrum.API.Services.Analytics
                         Id = game.RawgId.ToString(),
                         Label = game.Title,
                         ImageUrl = game.CoverImageUrl,
+                        GameId = game.RawgId,
+                        GameTitle = game.Title,
+                        CoverImageUrl = game.CoverImageUrl,
                         Count = 0,
                         Score = 0
                     })
@@ -282,12 +321,19 @@ namespace Spectrum.API.Services.Analytics
                 .ToListAsync(cancellationToken);
             var uploadedClipCounts = await GetClipVoteCountsAsync(uploadedClips.Select(clip => clip.Id), cancellationToken);
             var uploadedClipUserVotes = await GetClipUserVotesAsync(uploadedClips.Select(clip => clip.Id), currentUserId, cancellationToken);
+            var reviewUserVotes = await ResolveReviewVotesAsync(reviewClips.Select(review => review.Id), currentUserId, cancellationToken);
 
             var allClips = reviewClips
                 .Select(review =>
                 {
                     var game = _gameRepository.GetById(review.GameId);
-                    return MapWeeklyReview(review, game?.Title, game?.CoverImageUrl, currentUserId: currentUserId);
+                    return MapWeeklyReview(
+                        review,
+                        game?.Title,
+                        game?.CoverImageUrl,
+                        currentUserId: currentUserId,
+                        currentUserVote: reviewUserVotes.GetValueOrDefault(review.Id)
+                    );
                 })
                 .Concat(uploadedClips.Select(clip => MapWeeklyClip(clip, uploadedClipCounts, uploadedClipUserVotes, currentUserId)))
                 .OrderByDescending(clip => clip.LikesCount)
@@ -330,11 +376,18 @@ namespace Spectrum.API.Services.Analytics
                 .ToListAsync(cancellationToken);
             var uploadedClipCounts = await GetClipVoteCountsAsync(uploadedClips.Select(clip => clip.Id), cancellationToken);
             var uploadedClipUserVotes = await GetClipUserVotesAsync(uploadedClips.Select(clip => clip.Id), currentUserId, cancellationToken);
+            var reviewUserVotes = await ResolveReviewVotesAsync(reviews.Select(review => review.Id), currentUserId, cancellationToken);
 
             return reviews.Select(review =>
                 {
                     var game = _gameRepository.GetById(review.GameId);
-                    return MapWeeklyReview(review, game?.Title, game?.CoverImageUrl, currentUserId: currentUserId);
+                    return MapWeeklyReview(
+                        review,
+                        game?.Title,
+                        game?.CoverImageUrl,
+                        currentUserId: currentUserId,
+                        currentUserVote: reviewUserVotes.GetValueOrDefault(review.Id)
+                    );
                 })
                 .Concat(uploadedClips.Select(clip => MapWeeklyClip(clip, uploadedClipCounts, uploadedClipUserVotes, currentUserId)))
                 .OrderByDescending(clip => clip.LikesCount)
@@ -372,13 +425,17 @@ namespace Spectrum.API.Services.Analytics
                 {
                     var game = _gameRepository.GetById(group.Key);
                     var interactions = group.Count() + group.Sum(review => review.LikesCount + GetCommentCount(commentCounts, review.Id));
+                    var coverImageUrl = game?.CoverImageUrl;
                     return new NamedMetricDto
                     {
                         Id = group.Key.ToString(),
                         Label = game?.Title ?? $"Game {group.Key}",
                         Count = interactions,
                         Score = interactions,
-                        ImageUrl = game?.CoverImageUrl
+                        ImageUrl = coverImageUrl,
+                        GameId = group.Key,
+                        GameTitle = game?.Title ?? $"Game {group.Key}",
+                        CoverImageUrl = coverImageUrl
                     };
                 })
                 .OrderByDescending(metric => metric.Count)
@@ -395,13 +452,17 @@ namespace Spectrum.API.Services.Analytics
                 {
                     var game = _gameRepository.GetById(group.Key);
                     var average = group.Average(review => review.Rating);
+                    var coverImageUrl = game?.CoverImageUrl;
                     return new NamedMetricDto
                     {
                         Id = group.Key.ToString(),
                         Label = game?.Title ?? $"Game {group.Key}",
                         Count = group.Count(),
                         Score = Math.Round(average, 2),
-                        ImageUrl = game?.CoverImageUrl
+                        ImageUrl = coverImageUrl,
+                        GameId = group.Key,
+                        GameTitle = game?.Title ?? $"Game {group.Key}",
+                        CoverImageUrl = coverImageUrl
                     };
                 });
 
@@ -465,17 +526,32 @@ namespace Spectrum.API.Services.Analytics
             string? gameTitle,
             string? gameCoverUrl,
             int commentsCount = 0,
-            Guid? currentUserId = null
+            Guid? currentUserId = null,
+            string? currentUserVote = null
         )
         {
+            var profileImageUrl = review.User?.ProfilePicture ?? string.Empty;
+            var resolvedGameTitle = gameTitle ?? $"Game {review.GameId}";
+            var resolvedGameCoverUrl = gameCoverUrl ?? string.Empty;
+            var isOwnContent = currentUserId.HasValue && review.UserId == currentUserId.Value;
+            var resolvedUserVote = isOwnContent ? null : currentUserVote;
+
             return new WeeklyReviewDto
             {
                 ReviewId = review.Id,
                 UserId = review.UserId,
                 Username = review.User?.Username ?? string.Empty,
+                UserProfileImageUrl = profileImageUrl,
+                ProfileImageUrl = profileImageUrl,
                 GameId = review.GameId,
-                GameTitle = gameTitle ?? $"Game {review.GameId}",
-                GameCoverUrl = gameCoverUrl ?? string.Empty,
+                GameTitle = resolvedGameTitle,
+                GameCoverUrl = resolvedGameCoverUrl,
+                CoverImageUrl = resolvedGameCoverUrl,
+                ReviewTitle = review.Title,
+                ReviewContent = review.Content,
+                ReviewDate = review.CreatedAt,
+                Rating = review.Rating,
+                Score = review.Rating,
                 Title = review.Title,
                 Content = review.Content,
                 AttachmentUrl = review.ImageUrl ?? string.Empty,
@@ -484,7 +560,10 @@ namespace Spectrum.API.Services.Analytics
                 DislikesCount = review.DislikesCount,
                 CommentsCount = commentsCount,
                 SourceType = "REVIEW",
-                IsOwnContent = currentUserId.HasValue && review.UserId == currentUserId.Value,
+                UserVote = resolvedUserVote,
+                CurrentUserVote = resolvedUserVote,
+                MyVote = resolvedUserVote,
+                IsOwnContent = isOwnContent,
                 CreatedAt = review.CreatedAt
             };
         }
@@ -497,14 +576,25 @@ namespace Spectrum.API.Services.Analytics
         )
         {
             var count = counts.TryGetValue(clip.Id, out var resolvedCount) ? resolvedCount : (Likes: 0, Dislikes: 0);
+            var profileImageUrl = clip.User?.ProfilePicture ?? string.Empty;
+            var coverImageUrl = clip.Game?.CoverImageUrl ?? string.Empty;
+            var userVote = userVotes.TryGetValue(clip.Id, out var vote) ? vote : null;
             return new WeeklyReviewDto
             {
                 ReviewId = clip.Id,
                 UserId = clip.UserId,
                 Username = clip.User?.Username ?? string.Empty,
+                UserProfileImageUrl = profileImageUrl,
+                ProfileImageUrl = profileImageUrl,
                 GameId = 0,
                 GameTitle = clip.Game?.Title ?? string.Empty,
-                GameCoverUrl = clip.Game?.CoverImageUrl ?? string.Empty,
+                GameCoverUrl = coverImageUrl,
+                CoverImageUrl = coverImageUrl,
+                ReviewTitle = clip.Title,
+                ReviewContent = clip.Description ?? string.Empty,
+                ReviewDate = clip.CreatedAt,
+                Rating = 0,
+                Score = 0,
                 Title = clip.Title,
                 Content = clip.Description ?? string.Empty,
                 AttachmentUrl = clip.Url,
@@ -513,10 +603,21 @@ namespace Spectrum.API.Services.Analytics
                 DislikesCount = count.Dislikes,
                 CommentsCount = 0,
                 SourceType = "GAME_CLIP",
-                UserVote = userVotes.TryGetValue(clip.Id, out var vote) ? vote : null,
+                UserVote = userVote,
+                CurrentUserVote = userVote,
+                MyVote = userVote,
                 IsOwnContent = currentUserId.HasValue && clip.UserId == currentUserId.Value,
                 CreatedAt = clip.CreatedAt
             };
+        }
+
+        private async Task<IReadOnlyDictionary<Guid, string>> ResolveReviewVotesAsync(
+            IEnumerable<Guid> reviewIds,
+            Guid? currentUserId,
+            CancellationToken cancellationToken
+        )
+        {
+            return await _voteService.GetCurrentReviewVotesAsync(reviewIds, currentUserId, cancellationToken);
         }
 
         private async Task<IReadOnlyDictionary<Guid, (int Likes, int Dislikes)>> GetClipVoteCountsAsync(

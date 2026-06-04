@@ -95,6 +95,7 @@ namespace Spectrum.API.Services.Profile
             user.IsDeleted = true;
             user.IsSuspended = true;
             await _userRepository.UpdateUserAsync(user);
+            await TrySendBannedEmailAsync(user.Email, user.Id, cancellationToken);
         }
 
         public async Task ToggleSuspensionAsync(Guid targetUserId, bool suspend, CancellationToken cancellationToken = default)
@@ -124,6 +125,10 @@ namespace Spectrum.API.Services.Profile
             {
                 await TrySendSuspensionEmailAsync(user.Email, user.Id, cancellationToken);
             }
+            else
+            {
+                await TrySendReactivationEmailAsync(user.Email, user.Id, cancellationToken);
+            }
         }
 
         private async Task TrySendSuspensionEmailAsync(string email, Guid userId, CancellationToken cancellationToken)
@@ -140,6 +145,40 @@ namespace Spectrum.API.Services.Profile
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 _logger?.LogWarning(ex, "Could not send suspension email for user {UserId}", userId);
+            }
+        }
+
+        private async Task TrySendBannedEmailAsync(string email, Guid userId, CancellationToken cancellationToken)
+        {
+            if (_emailService is null || string.IsNullOrWhiteSpace(email))
+            {
+                return;
+            }
+
+            try
+            {
+                await _emailService.SendAccountBannedAsync(email);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger?.LogWarning(ex, "Could not send banned account email for user {UserId}", userId);
+            }
+        }
+
+        private async Task TrySendReactivationEmailAsync(string email, Guid userId, CancellationToken cancellationToken)
+        {
+            if (_emailService is null || string.IsNullOrWhiteSpace(email))
+            {
+                return;
+            }
+
+            try
+            {
+                await _emailService.SendAccountReactivatedAsync(email);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger?.LogWarning(ex, "Could not send reactivation email for user {UserId}", userId);
             }
         }
     }

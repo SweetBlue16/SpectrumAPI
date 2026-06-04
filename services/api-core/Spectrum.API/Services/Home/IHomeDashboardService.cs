@@ -5,12 +5,13 @@ using Spectrum.API.Dtos.Home;
 using Spectrum.API.Repositories;
 using Spectrum.API.Services.Analytics;
 using Spectrum.API.Services.Drops;
+using Spectrum.API.Services.Votes;
 
 namespace Spectrum.API.Services.Home
 {
     public interface IHomeDashboardService
     {
-        Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default);
+        Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
     }
 
     public class HomeDashboardService : IHomeDashboardService
@@ -19,21 +20,24 @@ namespace Spectrum.API.Services.Home
         private readonly IGameRepository _gameRepository;
         private readonly IDropsService _dropsService;
         private readonly ICommentAnalyticsService _commentAnalyticsService;
+        private readonly IVoteService _voteService;
 
         public HomeDashboardService(
             SpectrumDbContext context,
             IGameRepository gameRepository,
             IDropsService dropsService,
-            ICommentAnalyticsService commentAnalyticsService
+            ICommentAnalyticsService commentAnalyticsService,
+            IVoteService voteService
         )
         {
             _context = context;
             _gameRepository = gameRepository;
             _dropsService = dropsService;
             _commentAnalyticsService = commentAnalyticsService;
+            _voteService = voteService;
         }
 
-        public async Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default)
+        public async Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
         {
             var today = DateTime.UtcNow.Date;
             var weekEnd = today.AddDays(7);
@@ -72,6 +76,11 @@ namespace Spectrum.API.Services.Home
                 .ThenByDescending(review => review.CreatedAt)
                 .Take(5)
                 .ToList();
+            var currentUserVotes = await _voteService.GetCurrentReviewVotesAsync(
+                popularReviews.Select(review => review.Id),
+                currentUserId,
+                cancellationToken
+            );
 
             var currentDrops = await _dropsService.ListEventsAsync(
                 "CURRENT",
@@ -94,7 +103,14 @@ namespace Spectrum.API.Services.Home
             return new HomeDashboardDto
             {
                 RecentGames = recentGames,
-                PopularReviewsToday = popularReviews.Select(review => MapReview(review, GetCommentCount(commentCounts, review.Id))).ToList(),
+                PopularReviewsToday = popularReviews
+                    .Select(review => MapReview(
+                        review,
+                        GetCommentCount(commentCounts, review.Id),
+                        currentUserId,
+                        currentUserVotes.GetValueOrDefault(review.Id)
+                    ))
+                    .ToList(),
                 WeeklyDrops = currentDrops.Items
                     .Concat(upcomingDrops.Items)
                     .Where(drop => drop.StartAt < weekEnd && drop.EndAt >= today)
@@ -109,22 +125,32 @@ namespace Spectrum.API.Services.Home
             return counts.TryGetValue(reviewId, out var count) ? count : 0;
         }
 
-        private HomeReviewDto MapReview(Models.Review review, int commentsCount)
+        private HomeReviewDto MapReview(Models.Review review, int commentsCount, Guid? currentUserId, string? currentUserVote)
         {
             var game = _gameRepository.GetById(review.GameId);
+            var profileImageUrl = review.User?.ProfilePicture ?? string.Empty;
+            var coverImageUrl = game?.CoverImageUrl ?? string.Empty;
+            var isOwnReview = currentUserId.HasValue && currentUserId.Value == review.UserId;
+            var resolvedUserVote = isOwnReview ? null : currentUserVote;
             return new HomeReviewDto
             {
                 ReviewId = review.Id,
                 UserId = review.UserId,
                 Username = review.User?.Username ?? string.Empty,
+                UserProfileImageUrl = profileImageUrl,
+                ProfileImageUrl = profileImageUrl,
                 GameId = review.GameId,
                 GameTitle = game?.Title ?? $"Game {review.GameId}",
-                GameCoverUrl = game?.CoverImageUrl ?? string.Empty,
+                GameCoverUrl = coverImageUrl,
+                CoverImageUrl = coverImageUrl,
                 Title = review.Title,
                 Content = review.Content,
                 Rating = review.Rating,
                 LikesCount = review.LikesCount,
                 DislikesCount = review.DislikesCount,
+                CurrentUserVote = resolvedUserVote,
+                UserVote = resolvedUserVote,
+                MyVote = resolvedUserVote,
                 CommentsCount = commentsCount,
                 CreatedAt = review.CreatedAt
             };

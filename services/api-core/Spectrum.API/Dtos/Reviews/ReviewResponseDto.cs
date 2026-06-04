@@ -1,5 +1,8 @@
 namespace Spectrum.API.Dtos.Reviews
 {
+    /// <summary>
+    /// Review contract consumed by SpectrumApp in game lists, profile views and detail modals.
+    /// </summary>
     public class ReviewResponseDto
     {
         public Guid Id { get; set; }
@@ -37,6 +40,15 @@ namespace Spectrum.API.Dtos.Reviews
         public int LikesCount { get; set; }
 
         public int DislikesCount { get; set; }
+
+        /// <summary>
+        /// Authenticated user's active vote for this review: like, dislike or null.
+        /// </summary>
+        public string? CurrentUserVote { get; set; }
+
+        public string? UserVote { get; set; }
+
+        public string? MyVote { get; set; }
 
         public bool IsOwnReview { get; set; }
 

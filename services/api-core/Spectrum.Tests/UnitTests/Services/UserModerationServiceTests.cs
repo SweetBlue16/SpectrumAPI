@@ -2,6 +2,7 @@
 using Spectrum.API.Exceptions;
 using Spectrum.API.Models;
 using Spectrum.API.Repositories;
+using Spectrum.API.Services.Email;
 using Spectrum.API.Services.Profile;
 using Spectrum.API.Utilities;
 
@@ -71,6 +72,74 @@ namespace Spectrum.Tests.UnitTests.Services
 
             Assert.True(user.IsSuspended);
             _userRepositoryMock.Verify(r => r.UpdateUserAsync(user), Times.Once);
+        }
+
+        [Fact]
+        public async Task ToggleSuspensionAsyncWhenSuspendingShouldSendEmail()
+        {
+            var userId = Guid.NewGuid();
+            var user = new User
+            {
+                Id = userId,
+                Role = Constants.Roles.Reviewer,
+                IsSuspended = false,
+                Email = "user@spectrum.test"
+            };
+            var emailServiceMock = new Mock<IEmailService>();
+            var service = new UserModerationService(_userRepositoryMock.Object, emailServiceMock.Object);
+
+            _userRepositoryMock.Setup(r => r.GetUserByIdAsync(userId)).ReturnsAsync(user);
+            _userRepositoryMock.Setup(r => r.UpdateUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            await service.ToggleSuspensionAsync(userId, true);
+
+            emailServiceMock.Verify(email => email.SendAccountSuspendedAsync(user.Email), Times.Once);
+        }
+
+        [Fact]
+        public async Task ToggleSuspensionAsyncWhenReactivatingShouldSendEmail()
+        {
+            var userId = Guid.NewGuid();
+            var user = new User
+            {
+                Id = userId,
+                Role = Constants.Roles.Reviewer,
+                IsSuspended = true,
+                Email = "user@spectrum.test"
+            };
+            var emailServiceMock = new Mock<IEmailService>();
+            var service = new UserModerationService(_userRepositoryMock.Object, emailServiceMock.Object);
+
+            _userRepositoryMock.Setup(r => r.GetUserByIdAsync(userId)).ReturnsAsync(user);
+            _userRepositoryMock.Setup(r => r.UpdateUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            await service.ToggleSuspensionAsync(userId, false);
+
+            emailServiceMock.Verify(email => email.SendAccountReactivatedAsync(user.Email), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAsyncWhenValidReviewerShouldDeactivateAndSendEmail()
+        {
+            var userId = Guid.NewGuid();
+            var user = new User
+            {
+                Id = userId,
+                Role = Constants.Roles.Reviewer,
+                IsDeleted = false,
+                Email = "user@spectrum.test"
+            };
+            var emailServiceMock = new Mock<IEmailService>();
+            var service = new UserModerationService(_userRepositoryMock.Object, emailServiceMock.Object);
+
+            _userRepositoryMock.Setup(r => r.GetUserByIdAsync(userId)).ReturnsAsync(user);
+            _userRepositoryMock.Setup(r => r.UpdateUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            await service.DeleteUserAsync(userId);
+
+            Assert.True(user.IsDeleted);
+            Assert.True(user.IsSuspended);
+            emailServiceMock.Verify(email => email.SendAccountBannedAsync(user.Email), Times.Once);
         }
 
         [Fact]

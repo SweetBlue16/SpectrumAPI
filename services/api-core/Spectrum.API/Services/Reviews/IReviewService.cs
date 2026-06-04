@@ -3,6 +3,7 @@ using Spectrum.API.Exceptions;
 using Spectrum.API.Models;
 using Spectrum.API.Repositories;
 using Spectrum.API.Services.Email;
+using Spectrum.API.Services.Votes;
 
 namespace Spectrum.API.Services.Reviews
 {
@@ -69,17 +70,20 @@ namespace Spectrum.API.Services.Reviews
         private readonly IReviewRepository _reviewRepository;
         private readonly IGameRepository? _gameRepository;
         private readonly IEmailService? _emailService;
+        private readonly IVoteService? _voteService;
         private readonly ILogger<ReviewService>? _logger;
 
         public ReviewService(
             IReviewRepository reviewRepository,
             IGameRepository? gameRepository = null,
             IEmailService? emailService = null,
+            IVoteService? voteService = null,
             ILogger<ReviewService>? logger = null)
         {
             _reviewRepository = reviewRepository;
             _gameRepository = gameRepository;
             _emailService = emailService;
+            _voteService = voteService;
             _logger = logger;
         }
 
@@ -117,7 +121,7 @@ namespace Spectrum.API.Services.Reviews
 
             var persistedReview = await _reviewRepository.GetByIdAsync(createdReview.Id, cancellationToken);
 
-            return MapToResponseDto(persistedReview ?? createdReview, userId);
+            return MapToResponseDto(persistedReview ?? createdReview, userId, currentUserVote: null);
         }
 
         public async Task<ReviewResponseDto> GetByIdAsync(
@@ -133,7 +137,13 @@ namespace Spectrum.API.Services.Reviews
                 throw new SpectrumNotFoundException(ReviewNotFoundMessage);
             }
 
-            return MapToResponseDto(review, currentUserId);
+            var userVotes = await ResolveCurrentUserVotesAsync(new[] { review.Id }, currentUserId, cancellationToken);
+
+            return MapToResponseDto(
+                review,
+                currentUserId,
+                currentUserVote: userVotes.GetValueOrDefault(review.Id)
+            );
         }
 
         public async Task<IReadOnlyList<ReviewResponseDto>> GetByGameIdAsync(
@@ -147,8 +157,19 @@ namespace Spectrum.API.Services.Reviews
 
             var reviews = await _reviewRepository.GetByGameIdAsync(gameId, cancellationToken);
 
+            var userVotes = await ResolveCurrentUserVotesAsync(
+                reviews.Select(review => review.Id),
+                currentUserId,
+                cancellationToken
+            );
+
             return reviews
-                .Select(review => MapToResponseDto(review, currentUserId, isAdmin))
+                .Select(review => MapToResponseDto(
+                    review,
+                    currentUserId,
+                    isAdmin,
+                    userVotes.GetValueOrDefault(review.Id)
+                ))
                 .ToList();
         }
 
@@ -160,8 +181,18 @@ namespace Spectrum.API.Services.Reviews
         {
             var reviews = await _reviewRepository.GetByUserIdAsync(userId, cancellationToken);
 
+            var userVotes = await ResolveCurrentUserVotesAsync(
+                reviews.Select(review => review.Id),
+                currentUserId,
+                cancellationToken
+            );
+
             return reviews
-                .Select(review => MapToResponseDto(review, currentUserId))
+                .Select(review => MapToResponseDto(
+                    review,
+                    currentUserId,
+                    currentUserVote: userVotes.GetValueOrDefault(review.Id)
+                ))
                 .ToList();
         }
 
@@ -299,7 +330,12 @@ namespace Spectrum.API.Services.Reviews
             }
         }
 
-        private ReviewResponseDto MapToResponseDto(Review review, Guid? currentUserId, bool isAdmin = false)
+        private ReviewResponseDto MapToResponseDto(
+            Review review,
+            Guid? currentUserId,
+            bool isAdmin = false,
+            string? currentUserVote = null
+        )
         {
             var profilePicture = review.User?.ProfilePicture ?? string.Empty;
             var isOwnReview = currentUserId.HasValue && review.UserId == currentUserId.Value;
@@ -326,9 +362,26 @@ namespace Spectrum.API.Services.Reviews
                 UpdatedAt = review.UpdatedAt,
                 LikesCount = review.LikesCount,
                 DislikesCount = review.DislikesCount,
+                CurrentUserVote = isOwnReview ? null : currentUserVote,
+                UserVote = isOwnReview ? null : currentUserVote,
+                MyVote = isOwnReview ? null : currentUserVote,
                 IsOwnReview = isOwnReview,
                 CanDelete = isOwnReview || isAdmin
             };
+        }
+
+        private async Task<IReadOnlyDictionary<Guid, string>> ResolveCurrentUserVotesAsync(
+            IEnumerable<Guid> reviewIds,
+            Guid? currentUserId,
+            CancellationToken cancellationToken
+        )
+        {
+            if (_voteService is null)
+            {
+                return new Dictionary<Guid, string>();
+            }
+
+            return await _voteService.GetCurrentReviewVotesAsync(reviewIds, currentUserId, cancellationToken);
         }
 
         private static void ValidateGameId(int gameId)

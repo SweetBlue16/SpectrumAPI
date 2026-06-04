@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+using Spectrum.API.Utilities;
+using System.ComponentModel.DataAnnotations;
 
 namespace Spectrum.API.Dtos.Reports
 {
@@ -11,10 +12,10 @@ namespace Spectrum.API.Dtos.Reports
         public string TargetType { get; set; } = string.Empty;
 
         [Required]
-        [MaxLength(500)]
+        [MaxLength(InputValidationLimits.ShortText)]
         public string Reason { get; set; } = string.Empty;
 
-        [MaxLength(1000)]
+        [MaxLength(InputValidationLimits.ReportDescription)]
         public string? Description { get; set; }
     }
 }

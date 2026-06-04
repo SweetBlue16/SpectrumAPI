@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Spectrum.API.Dtos.Analytics;
 using Spectrum.API.Services.Analytics;
+using System.Security.Claims;
 
 namespace Spectrum.API.Controllers
 {
@@ -21,7 +22,7 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(typeof(WeeklyTrendsDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetWeekly(CancellationToken cancellationToken)
         {
-            var trends = await _analyticsService.GetWeeklyTrendsAsync(cancellationToken);
+            var trends = await _analyticsService.GetWeeklyTrendsAsync(cancellationToken, GetCurrentUserIdOrDefault());
             return Ok(trends);
         }
 
@@ -29,8 +30,17 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(typeof(TrendsDashboardDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
         {
-            var trends = await _analyticsService.GetTrendsDashboardAsync(cancellationToken);
+            var trends = await _analyticsService.GetTrendsDashboardAsync(cancellationToken, GetCurrentUserIdOrDefault());
             return Ok(trends);
+        }
+
+        private Guid? GetCurrentUserIdOrDefault()
+        {
+            var userIdClaim = User?.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                              User?.FindFirst("sub")?.Value ??
+                              User?.FindFirst("userId")?.Value;
+
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
         }
     }
 }

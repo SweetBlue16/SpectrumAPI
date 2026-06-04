@@ -28,6 +28,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -212,6 +213,158 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void claimAccessKeyWhenUserAlreadyClaimedShouldRejectWithoutSecondKey() {
+        String eventId = "event-duplicate";
+        String userId = "user-duplicate";
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenReturn(null);
+
+        Event event = activeEvent(eventId);
+        event.setWinners(List.of(Winner.builder()
+                .userId(userId)
+                .username("already-winner")
+                .claimedAt(Instant.now().toEpochMilli())
+                .build()));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<ClaimKeyResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                .setEventId(eventId)
+                .setUserId(userId)
+                .setUsername("already-winner")
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("", observer.value.getAccessKeyCode());
+        verify(mongoTemplate, never()).updateFirst(any(Query.class), any(UpdateDefinition.class), eq(Event.class));
+    }
+
+    @Test
+    void claimAccessKeyWhenInventoryIsZeroShouldRejectAndNeverGoNegative() {
+        String eventId = "event-empty";
+        String userId = "user-empty";
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenReturn(null);
+
+        Event event = activeEvent(eventId);
+        event.setKeysAvailable(0);
+        event.setStatus("EXHAUSTED");
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<ClaimKeyResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                .setEventId(eventId)
+                .setUserId(userId)
+                .setUsername("empty")
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals(0, event.getKeysAvailable());
+        verify(mongoTemplate, never()).updateFirst(any(Query.class), any(UpdateDefinition.class), eq(Event.class));
+    }
+
+    @Test
+    void claimAccessKeyWhenHundredUsersRaceForTenKeysShouldReturnTenWinners() throws InterruptedException {
+        String eventId = "event-ten-keys";
+        AtomicInteger assigned = new AtomicInteger(0);
+        Queue<ClaimKeyResponse> responses = new ConcurrentLinkedQueue<>();
+
+        when(participantRepository.existsByEventIdAndUserId(eq(eventId), anyString())).thenReturn(true);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(exhaustedEvent(eventId)));
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenAnswer(invocation -> {
+                    int number = assigned.incrementAndGet();
+                    if (number > 10) {
+                        return null;
+                    }
+
+                    Event event = eventWithTenKeys(eventId);
+                    RewardCode code = event.getRewardCodes().get(number - 1);
+                    code.setClaimed(true);
+                    code.setClaimedByUserId("winner-" + number);
+                    code.setClaimedAt(Instant.now().toEpochMilli());
+                    event.setKeysAvailable(10 - number);
+                    event.setStatus(number == 10 ? "EXHAUSTED" : "REVEAL_ACTIVE");
+                    return event;
+                });
+        when(mongoTemplate.updateFirst(any(Query.class), any(UpdateDefinition.class), eq(Event.class)))
+                .thenReturn(null);
+
+        int attempts = 100;
+        CountDownLatch latch = new CountDownLatch(attempts);
+        var executor = Executors.newFixedThreadPool(25);
+        for (int index = 0; index < attempts; index++) {
+            int userNumber = index;
+            executor.submit(() -> {
+                dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                        .setEventId(eventId)
+                        .setUserId("user-" + userNumber)
+                        .setUsername("user-" + userNumber)
+                        .build(), new StreamObserver<>() {
+                    @Override
+                    public void onNext(ClaimKeyResponse value) {
+                        responses.add(value);
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        latch.countDown();
+                    }
+                });
+            });
+        }
+
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        executor.shutdownNow();
+
+        assertEquals(attempts, responses.size());
+        assertEquals(10, responses.stream().filter(ClaimKeyResponse::getSuccess).count());
+        assertEquals(90, responses.stream().filter(response -> !response.getSuccess()).count());
+    }
+
+    @Test
+    void getWonKeysShouldReturnOnlyKeysForRequestedUser() {
+        String userId = "user-owner";
+        Event first = exhaustedEvent("event-owned");
+        first.setGameTitle("Halo");
+        first.setWinners(List.of(
+                Winner.builder().userId(userId).username("owner").rewardCode("OWN-KEY").claimedAt(1000L).deliveryStatus("PENDING").build(),
+                Winner.builder().userId("other").username("other").rewardCode("OTHER-KEY").claimedAt(1001L).deliveryStatus("PENDING").build()
+        ));
+        Event second = exhaustedEvent("event-other");
+        second.setWinners(List.of(
+                Winner.builder().userId("other").username("other").rewardCode("OTHER-ONLY").claimedAt(1002L).deliveryStatus("PENDING").build()
+        ));
+        when(mongoTemplate.find(any(Query.class), eq(Event.class))).thenReturn(List.of(first, second));
+
+        CapturingObserver<WonKeysResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getWonKeys(WonKeysRequest.newBuilder().setUserId(userId).build(), observer);
+
+        assertEquals(1, observer.value.getWonKeysCount());
+        assertEquals("event-owned", observer.value.getWonKeys(0).getEventId());
+        assertEquals("OWN-KEY", observer.value.getWonKeys(0).getAccessKeyCode());
+    }
+
+    @Test
     void joinEventWhenSlotAvailableShouldCreateParticipationAndDecrementInventory() {
         String eventId = "event-join";
         String userId = "user-1";
@@ -298,6 +451,27 @@ class DropsGrpcServiceTest {
         event.setWinners(List.of());
         event.setPublicChallengeCode("");
         event.setRewardDeliveryStatus("PENDING");
+        return event;
+    }
+
+    private static Event eventWithTenKeys(String eventId) {
+        Event event = activeEvent(eventId);
+        event.setKeysTotal(10);
+        event.setKeysAvailable(10);
+        event.setRewardCodes(java.util.stream.IntStream.rangeClosed(1, 10)
+                .mapToObj(number -> RewardCode.builder()
+                        .code("DEMO-KEY-" + number)
+                        .claimed(false)
+                        .deliveryStatus("PENDING")
+                        .build())
+                .toList());
+        return event;
+    }
+
+    private static Event exhaustedEvent(String eventId) {
+        Event event = activeEvent(eventId);
+        event.setKeysAvailable(0);
+        event.setStatus("EXHAUSTED");
         return event;
     }
 

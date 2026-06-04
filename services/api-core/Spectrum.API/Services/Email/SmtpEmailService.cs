@@ -54,6 +54,11 @@ namespace Spectrum.API.Services.Email
 
         public Task SendRewardAsync(string email, string eventTitle, string rewardCode)
         {
+            return SendGiveawayWinnerEmailAsync(email, eventTitle, rewardCode);
+        }
+
+        public Task SendGiveawayWinnerEmailAsync(string email, string eventTitle, string rewardCode)
+        {
             return SendCustomAsync(
                 email,
                 $"Tu recompensa de Spectrum: {eventTitle}",
@@ -91,6 +96,38 @@ namespace Spectrum.API.Services.Email
                 "Tu cuenta de Spectrum fue suspendida",
                 "Cuenta suspendida",
                 "Tu cuenta está suspendida temporalmente. Contacta a soporte si crees que es un error."
+            );
+        }
+
+        public Task SendAccountBannedAsync(string email)
+        {
+            return SendNoticeAsync(
+                email,
+                "Tu cuenta de Spectrum fue desactivada",
+                "Cuenta desactivada",
+                "Un administrador desactivó tu cuenta por incumplimiento de las reglas de la comunidad."
+            );
+        }
+
+        public Task SendAccountReactivatedAsync(string email)
+        {
+            return SendNoticeAsync(
+                email,
+                "Tu cuenta de Spectrum fue reactivada",
+                "Cuenta reactivada",
+                "Tu cuenta fue reactivada y ya puedes volver a usar Spectrum."
+            );
+        }
+
+        public Task SendReportActionAsync(string email, string actionSummary)
+        {
+            return SendNoticeAsync(
+                email,
+                "Actualización sobre un reporte en Spectrum",
+                "Reporte revisado",
+                string.IsNullOrWhiteSpace(actionSummary)
+                    ? "Un administrador revisó un reporte relacionado con tu cuenta o contenido."
+                    : actionSummary
             );
         }
 

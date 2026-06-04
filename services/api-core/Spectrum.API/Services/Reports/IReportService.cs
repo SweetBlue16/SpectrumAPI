@@ -2,6 +2,8 @@
 using Spectrum.API.Dtos.Reports;
 using Spectrum.API.Exceptions;
 using Spectrum.API.Grpc.Social;
+using Spectrum.API.Repositories;
+using Spectrum.API.Services.Email;
 using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Reports
@@ -17,11 +19,20 @@ namespace Spectrum.API.Services.Reports
     {
         private readonly ReportService.ReportServiceClient  _reportServiceClient;
         private readonly ILogger<ReportsService> _logger;
+        private readonly IUserRepository? _userRepository;
+        private readonly IEmailService? _emailService;
 
-        public ReportsService(ReportService.ReportServiceClient reportServiceClient, ILogger<ReportsService> logger)
+        public ReportsService(
+            ReportService.ReportServiceClient reportServiceClient,
+            ILogger<ReportsService> logger,
+            IUserRepository? userRepository = null,
+            IEmailService? emailService = null
+        )
         {
             _reportServiceClient = reportServiceClient;
             _logger = logger;
+            _userRepository = userRepository;
+            _emailService = emailService;
         }
 
         public async Task<IEnumerable<ReportDetailsDto>> GetReportsByStatusAsync(string status, CancellationToken cancellationToken = default)
@@ -108,6 +119,8 @@ namespace Spectrum.API.Services.Reports
 
                     throw new SpectrumBusinessException(response.Message);
                 }
+
+                await TrySendReportActionEmailAsync(reportId, dto, cancellationToken);
             }
             catch (RpcException ex)
             {
@@ -132,6 +145,50 @@ namespace Spectrum.API.Services.Reports
             return string.IsNullOrWhiteSpace(dto.ResolutionNotes)
                 ? dto.AdminNotes ?? string.Empty
                 : dto.ResolutionNotes;
+        }
+
+        private async Task TrySendReportActionEmailAsync(string reportId, UpdateReportStatusDto dto, CancellationToken cancellationToken)
+        {
+            if (_userRepository is null || _emailService is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var report = await ResolveReportAsync(reportId, ResolveStatus(dto), cancellationToken);
+                if (report is null ||
+                    !string.Equals(report.TargetType, "USER", StringComparison.OrdinalIgnoreCase) ||
+                    !Guid.TryParse(report.TargetId, out var targetUserId))
+                {
+                    return;
+                }
+
+                var user = await _userRepository.GetUserByIdAsync(targetUserId);
+                if (user is null || string.IsNullOrWhiteSpace(user.Email))
+                {
+                    return;
+                }
+
+                await _emailService.SendReportActionAsync(
+                    user.Email,
+                    "Un administrador revisó un reporte relacionado con tu cuenta en Spectrum."
+                );
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Could not send report action email for report {ReportId}", reportId);
+            }
+        }
+
+        private async Task<ReportDetailsDto?> ResolveReportAsync(
+            string reportId,
+            string status,
+            CancellationToken cancellationToken
+        )
+        {
+            var reports = await GetReportsByStatusAsync(status, cancellationToken);
+            return reports.FirstOrDefault(report => report.ReportId == reportId);
         }
     }
 }

@@ -15,6 +15,15 @@ namespace Spectrum.API.Services.Votes
             bool isPositive,
             CancellationToken cancellationToken = default
         );
+
+        /// <summary>
+        /// Resolves the authenticated user's active vote for a batch of reviews.
+        /// </summary>
+        Task<IReadOnlyDictionary<Guid, string>> GetCurrentReviewVotesAsync(
+            IEnumerable<Guid> reviewIds,
+            Guid? userId,
+            CancellationToken cancellationToken = default
+        );
     }
 
     public class VoteServiceClient : IVoteService
@@ -108,6 +117,57 @@ namespace Spectrum.API.Services.Votes
                     ),
                     _ => new SpectrumServiceUnavailableException(Constants.ErrorMessages.RpcServiceUnavailable, ex)
                 };
+            }
+        }
+
+        public async Task<IReadOnlyDictionary<Guid, string>> GetCurrentReviewVotesAsync(
+            IEnumerable<Guid> reviewIds,
+            Guid? userId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var ids = reviewIds.Distinct().ToArray();
+            if (!userId.HasValue || ids.Length == 0)
+            {
+                return new Dictionary<Guid, string>();
+            }
+
+            try
+            {
+                var request = new GetUserVotesRequest
+                {
+                    UserId = userId.Value.ToString(),
+                    TargetType = ReviewTargetType
+                };
+                request.TargetIds.AddRange(ids.Select(id => id.ToString()));
+
+                var response = await _voteServiceClient.GetUserVotesAsync(
+                    request,
+                    cancellationToken: cancellationToken
+                );
+
+                var votes = new Dictionary<Guid, string>();
+                foreach (var vote in response.Votes)
+                {
+                    if (Guid.TryParse(vote.TargetId, out var targetId))
+                    {
+                        votes[targetId] = vote.IsPositive ? "like" : "dislike";
+                    }
+                }
+
+                return votes;
+            }
+            catch (RpcException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Could not resolve current review votes for userId={UserId} targetCount={TargetCount} status={StatusCode}",
+                    userId,
+                    ids.Length,
+                    ex.StatusCode
+                );
+
+                return new Dictionary<Guid, string>();
             }
         }
     }

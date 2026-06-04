@@ -45,6 +45,10 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     private static final String CANCELLED = "CANCELLED";
     private static final String REWARD_PENDING = "PENDING";
     private static final String REWARD_SENT = "SENT";
+    private static final int MAX_SHORT_TEXT_LENGTH = 120;
+    private static final int MAX_MEDIUM_TEXT_LENGTH = 300;
+    private static final int MAX_URL_LENGTH = 255;
+    private static final int MAX_REWARD_CODE_LENGTH = 50;
 
     private static final String STATUS_FIELD = "status";
     private static final String EVENT_ID_FIELD = "_id";
@@ -638,11 +642,20 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("Title is required.");
         }
+        if (title.length() > MAX_SHORT_TEXT_LENGTH) {
+            throw new IllegalArgumentException("Title is too long.");
+        }
         if (gameTitle == null || gameTitle.isBlank()) {
             throw new IllegalArgumentException("Game title is required.");
         }
+        if (gameTitle.length() > MAX_SHORT_TEXT_LENGTH) {
+            throw new IllegalArgumentException("Game title is too long.");
+        }
         if (platform == null || platform.isBlank()) {
             throw new IllegalArgumentException("Platform is required.");
+        }
+        if (platform.length() > MAX_SHORT_TEXT_LENGTH) {
+            throw new IllegalArgumentException("Platform is too long.");
         }
         if (totalSlots <= 0) {
             throw new IllegalArgumentException("Total slots must be greater than zero.");
@@ -667,7 +680,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         List<RewardCode> rewardCodes = new ArrayList<>();
         for (String accessKey : accessKeys) {
             String code = accessKey == null ? "" : accessKey.trim();
-            if (code.isBlank() || code.length() > 50) {
+            if (code.isBlank() || code.length() > MAX_REWARD_CODE_LENGTH) {
                 throw new IllegalArgumentException("Reward codes are required and must be at most 50 characters.");
             }
             if (!uniqueCodes.add(code)) {

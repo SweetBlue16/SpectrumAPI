@@ -9,6 +9,7 @@ package spectrum.social;
 
 service VoteService {
   rpc CastVote (CastVoteRequest) returns (VoteResponse);
+  rpc GetUserVotes (GetUserVotesRequest) returns (GetUserVotesResponse);
 }
 
 message CastVoteRequest {
@@ -22,6 +23,21 @@ message VoteResponse {
   bool success = 1;
   int32 updated_likes = 2;
   int32 updated_dislikes = 3;
+}
+
+message GetUserVotesRequest {
+  string user_id = 1;
+  string target_type = 2;
+  repeated string target_ids = 3;
+}
+
+message UserVote {
+  string target_id = 1;
+  bool is_positive = 2;
+}
+
+message GetUserVotesResponse {
+  repeated UserVote votes = 1;
 }
 
 service CommentService {

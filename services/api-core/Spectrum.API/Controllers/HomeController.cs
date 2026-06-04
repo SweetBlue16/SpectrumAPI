@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Spectrum.API.Dtos.Home;
 using Spectrum.API.Services.Home;
+using System.Security.Claims;
 
 namespace Spectrum.API.Controllers
 {
@@ -21,7 +22,16 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(typeof(HomeDashboardDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
         {
-            return Ok(await _homeDashboardService.GetDashboardAsync(cancellationToken));
+            return Ok(await _homeDashboardService.GetDashboardAsync(cancellationToken, GetCurrentUserIdOrDefault()));
+        }
+
+        private Guid? GetCurrentUserIdOrDefault()
+        {
+            var userIdClaim = User?.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                              User?.FindFirst("sub")?.Value ??
+                              User?.FindFirst("userId")?.Value;
+
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
         }
     }
 }

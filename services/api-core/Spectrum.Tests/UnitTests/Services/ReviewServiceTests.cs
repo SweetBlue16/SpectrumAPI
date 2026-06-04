@@ -4,6 +4,7 @@ using Spectrum.API.Exceptions;
 using Spectrum.API.Models;
 using Spectrum.API.Repositories;
 using Spectrum.API.Services.Reviews;
+using Spectrum.API.Services.Votes;
 
 namespace Spectrum.Tests.UnitTests.Services
 {
@@ -124,6 +125,32 @@ namespace Spectrum.Tests.UnitTests.Services
             Assert.False(anonymousResult.IsOwnReview);
             Assert.False(otherUserResult.IsOwnReview);
             Assert.Equal(review.User!.ProfilePicture, ownResult.UserProfileImageUrl);
+        }
+
+        [Fact]
+        public async Task GetByIdAsyncShouldIncludeCurrentUserVoteWhenProvidedByVoteService()
+        {
+            var ownerId = Guid.NewGuid();
+            var currentUserId = Guid.NewGuid();
+            var review = CreateReview(ownerId);
+            var voteServiceMock = new Mock<IVoteService>();
+            var service = new ReviewService(_reviewRepositoryMock.Object, voteService: voteServiceMock.Object);
+
+            _reviewRepositoryMock
+                .Setup(repository => repository.GetByIdAsync(review.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(review);
+            voteServiceMock
+                .Setup(service => service.GetCurrentReviewVotesAsync(
+                    It.Is<IEnumerable<Guid>>(ids => ids.Contains(review.Id)),
+                    currentUserId,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Dictionary<Guid, string> { [review.Id] = "like" });
+
+            var result = await service.GetByIdAsync(review.Id, currentUserId);
+
+            Assert.Equal("like", result.CurrentUserVote);
+            Assert.Equal("like", result.UserVote);
+            Assert.Equal("like", result.MyVote);
         }
 
         private static Review CreateReview(Guid ownerId)

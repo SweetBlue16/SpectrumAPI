@@ -32,7 +32,7 @@ namespace Spectrum.API.Services.Drops
             CancellationToken cancellationToken = default
         )
         {
-            await _emailService.SendRewardAsync(recipientEmail, eventTitle, rewardCode);
+            await _emailService.SendGiveawayWinnerEmailAsync(recipientEmail, eventTitle, rewardCode);
 
             _logger.LogInformation(
                 "Reward email sent for event {EventTitle} to recipient hash {RecipientHash}.",
