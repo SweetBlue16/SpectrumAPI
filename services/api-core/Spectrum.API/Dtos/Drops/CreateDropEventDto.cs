@@ -35,6 +35,5 @@ namespace Spectrum.API.Dtos.Drops
         public string PublicChallengeCode { get; set; } = string.Empty;
 
         public List<string> AccessKeys { get; set; } = new();
-        public bool PublishNow { get; set; }
     }
 }

@@ -60,35 +60,6 @@ namespace Spectrum.API.Controllers
             return Ok(result);
         }
 
-        [HttpPost("{id}/publish")]
-        public async Task<IActionResult> Publish(string id, CancellationToken cancellationToken)
-        {
-            var result = await _dropService.PublishEventAsync(id, publishNow: true, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("{id}/finish")]
-        public async Task<IActionResult> Finish(
-            string id,
-            [FromQuery] bool cancelIfWithoutWinner = true,
-            CancellationToken cancellationToken = default
-        )
-        {
-            var result = await _dropService.FinishEventAsync(id, cancelIfWithoutWinner, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("{id}/reward")]
-        public async Task<IActionResult> SendReward(
-            string id,
-            [FromBody] SendRewardDto dto,
-            CancellationToken cancellationToken
-        )
-        {
-            var result = await _dropService.SendRewardAsync(GetCurrentAdminId(), id, dto, cancellationToken);
-            return Ok(result);
-        }
-
         private Guid GetCurrentAdminId()
         {
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -121,6 +121,73 @@ namespace Spectrum.Tests.UnitTests.Services
         }
 
         [Fact]
+        public async Task ClaimAccessKeyAsyncWhenRewardEmailFailsShouldMarkDeliveryFailedAndReturnWinner()
+        {
+            var userId = Guid.NewGuid();
+            var eventId = "event-123";
+            var claimedAtEpoch = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            _userRepositoryMock
+                .Setup(repository => repository.GetUserByIdAsync(userId))
+                .ReturnsAsync(new User { Id = userId, Username = "neo", Email = "neo@spectrum.test" });
+
+            _grpcClientMock
+                .Setup(client => client.ClaimAccessKeyAsync(It.IsAny<ClaimKeyRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new ClaimKeyResponse
+                {
+                    Success = true,
+                    AccessKeyCode = "DHA3-SDFE-32EF-SF5R",
+                    WinnerUserId = userId.ToString(),
+                    WinnerUsername = "neo",
+                    ClaimedAt = claimedAtEpoch
+                }));
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(It.IsAny<GetEventRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = eventId,
+                    GameTitle = "Halo",
+                    Platform = "PC",
+                    Status = "REVEAL_READY",
+                    StartAt = claimedAtEpoch,
+                    JoinDeadlineAt = claimedAtEpoch,
+                    RevealAt = claimedAtEpoch,
+                    EndDate = claimedAtEpoch
+                }));
+            _rewardDeliveryServiceMock
+                .Setup(service => service.SendRewardAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new Exception("smtp failed"));
+            _grpcClientMock
+                .Setup(client => client.MarkRewardDeliveryFailedAsync(
+                    It.Is<MarkRewardDeliveryFailedRequest>(request =>
+                        request.EventId == eventId &&
+                        request.WinnerUserId == userId.ToString() &&
+                        request.FailedAt > 0),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventActionResponse
+                {
+                    Success = true,
+                    EventId = eventId
+                }));
+
+            var result = await _dropService.ClaimAccessKeyAsync(userId, eventId, new ClaimDropDto(), CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Equal("neo", result.WinnerUsername);
+            _grpcClientMock.Verify(client => client.MarkRewardDeliveryFailedAsync(
+                It.IsAny<MarkRewardDeliveryFailedRequest>(),
+                null,
+                null,
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
         public async Task GetEventStatusAsyncWhenRequesterExistsShouldMapUserDropFlags()
         {
             var userId = Guid.NewGuid();
@@ -230,6 +297,151 @@ namespace Spectrum.Tests.UnitTests.Services
 
             await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
                 _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task CreateEventAsyncShouldPublishAutomaticallyAndNormalizeRewardCodes()
+        {
+            var adminId = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = "Launch",
+                GameTitle = "Halo",
+                Platform = "PC",
+                StartAt = now.AddHours(1),
+                JoinDeadlineAt = now.AddHours(2),
+                RevealAt = now.AddHours(3),
+                EndAt = now.AddHours(4),
+                TotalSlots = 10,
+                AccessKeys = ["dha3-sdfe-32ef-sf5r"]
+            };
+
+            _grpcClientMock
+                .Setup(client => client.CreateEventAsync(
+                    It.Is<CreateEventRequest>(request =>
+                        request.PublishNow &&
+                        request.AccessKeys.Count == 1 &&
+                        request.AccessKeys[0] == "DHA3-SDFE-32EF-SF5R"),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventActionResponse
+                {
+                    Success = true,
+                    EventId = "created"
+                }));
+
+            var result = await _dropService.CreateEventAsync(dto, adminId, CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Equal("created", result.EventId);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("DEMO-KEY-1")]
+        [InlineData("DHA3-SDFE-32EF")]
+        [InlineData("DHA3-SDFE-32EF-SF5!")]
+        public async Task CreateEventAsyncWhenRewardCodeFormatIsInvalidShouldRejectEvent(string rewardCode)
+        {
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = "Invalid",
+                GameTitle = "Halo",
+                Platform = "PC",
+                StartAt = now.AddHours(1),
+                JoinDeadlineAt = now.AddHours(2),
+                RevealAt = now.AddHours(3),
+                EndAt = now.AddHours(4),
+                TotalSlots = 10,
+                AccessKeys = [rewardCode]
+            };
+
+            await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task CreateEventAsyncWhenRewardCodesAreDuplicatedShouldRejectEvent()
+        {
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = "Duplicated",
+                GameTitle = "Halo",
+                Platform = "PC",
+                StartAt = now.AddHours(1),
+                JoinDeadlineAt = now.AddHours(2),
+                RevealAt = now.AddHours(3),
+                EndAt = now.AddHours(4),
+                TotalSlots = 10,
+                AccessKeys = ["DHA3-SDFE-32EF-SF5R", "dha3-sdfe-32ef-sf5r"]
+            };
+
+            await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task UpdateEventAsyncWhenWithinTenMinutesBeforeStartShouldRejectWithExpectedMessage()
+        {
+            var now = DateTime.UtcNow;
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(It.IsAny<GetEventRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = "event-soon",
+                    Status = "UPCOMING",
+                    StartAt = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(),
+                    JoinDeadlineAt = DateTimeOffset.UtcNow.AddMinutes(20).ToUnixTimeMilliseconds(),
+                    RevealAt = DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeMilliseconds(),
+                    EndDate = DateTimeOffset.UtcNow.AddMinutes(40).ToUnixTimeMilliseconds()
+                }));
+
+            var exception = await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.UpdateEventAsync("event-soon", new UpdateDropEventDto
+                {
+                    Title = "Soon",
+                    GameTitle = "Halo",
+                    Platform = "PC",
+                    StartAt = now.AddMinutes(5),
+                    JoinDeadlineAt = now.AddMinutes(20),
+                    RevealAt = now.AddMinutes(30),
+                    EndAt = now.AddMinutes(40),
+                    TotalSlots = 10,
+                    AccessKeys = ["DHA3-SDFE-32EF-SF5R"]
+                }, CancellationToken.None));
+
+            Assert.Equal("Este evento está por comenzar, y no puede ser editado", exception.Message);
+        }
+
+        [Fact]
+        public async Task GetUserWonKeysAsyncShouldNotExposeRewardCodes()
+        {
+            var userId = Guid.NewGuid();
+            _grpcClientMock
+                .Setup(client => client.GetWonKeysAsync(It.IsAny<WonKeysRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new WonKeysResponse
+                {
+                    WonKeys =
+                    {
+                        new WonKey
+                        {
+                            EventId = "event-1",
+                            GameTitle = "Halo",
+                            AccessKeyCode = "DHA3-SDFE-32EF-SF5R",
+                            ClaimedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            RewardDeliveryStatus = "SENT"
+                        }
+                    }
+                }));
+
+            var result = (await _dropService.GetUserWonKeysAsync(userId, CancellationToken.None)).ToList();
+
+            Assert.Single(result);
+            Assert.Equal(string.Empty, result[0].AccessKeyCode);
         }
 
         private static AsyncUnaryCall<TResponse> CreateAsyncUnaryCall<TResponse>(TResponse response)

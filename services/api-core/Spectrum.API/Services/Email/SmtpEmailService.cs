@@ -61,11 +61,11 @@ namespace Spectrum.API.Services.Email
         {
             return SendCustomAsync(
                 email,
-                "Ganaste un codigo en Spectrum",
-                "Ganaste un codigo en Spectrum",
-                $"Felicidades, ganaste un codigo para el juego {eventTitle}. Tu codigo es:",
+                "Ganaste una recompensa de SpectrumApp",
+                "HAS SIDO EL GANADOR",
+                $"Felicidades. Obtuviste una recompensa de SpectrumApp en el sorteo {eventTitle}. Tu codigo ganado es:",
                 rewardCode,
-                "Que lo disfrutes. De parte de Spectrum."
+                "Este codigo fue asignado automaticamente al reclamar la recompensa. No lo compartas."
             );
         }
 

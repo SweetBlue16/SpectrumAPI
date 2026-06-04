@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -50,12 +51,14 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     private static final String CANCELLED = "CANCELLED";
     private static final String REWARD_PENDING = "PENDING";
     private static final String REWARD_SENT = "SENT";
+    private static final String REWARD_FAILED = "FAILED";
     private static final int MAX_SHORT_TEXT_LENGTH = 120;
     private static final int MAX_MEDIUM_TEXT_LENGTH = 300;
     private static final int MAX_URL_LENGTH = 255;
-    private static final int MAX_REWARD_CODE_LENGTH = 50;
+    private static final int MAX_REWARD_CODE_LENGTH = 19;
     private static final long EDIT_LOCK_MILLIS = 10 * 60 * 1000L;
     private static final long PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS = 60 * 60 * 1000L;
+    private static final Pattern REWARD_CODE_PATTERN = Pattern.compile("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$");
 
     private static final String STATUS_FIELD = "status";
     private static final String EVENT_ID_FIELD = "_id";
@@ -97,7 +100,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     .keysAvailable(rewardCodes.size())
                     .publicChallengeCode("")
                     .createdByAdminId(request.getCreatedByAdminId())
-                    .status(request.getPublishNow() ? initialPublishedStatus(request.getStartAt(), now) : DRAFT)
+                    .status(initialPublishedStatus(request.getStartAt(), now))
                     .rewardDeliveryStatus(REWARD_PENDING)
                     .participantsCount(0)
                     .rewardCodes(rewardCodes)
@@ -139,7 +142,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     .orElseThrow(() -> new IllegalArgumentException("Event not found."));
 
             if (!canEditEvent(event, Instant.now().toEpochMilli())) {
-                throw new IllegalStateException("Este sorteo ya no puede editarse porque esta proximo a iniciar.");
+                throw new IllegalStateException("Este evento está por comenzar, y no puede ser editado");
             }
 
             if (hasWinners(event)) {
@@ -172,9 +175,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                 event.setKeysTotal(event.getRewardCodes().size());
                 event.setKeysAvailable((int) event.getRewardCodes().stream().filter(code -> !code.isClaimed()).count());
             }
-            if (!request.getStatus().isBlank()) {
-                event.setStatus(request.getStatus());
-            }
+            event.setStatus(initialPublishedStatus(request.getStartAt(), Instant.now().toEpochMilli()));
 
             eventRepository.save(event);
             sendActionSuccess(responseObserver, event.getId(), "Event updated successfully.");
@@ -316,9 +317,10 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
             long now = Instant.now().toEpochMilli();
             Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
-                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED, FINISHED, EXHAUSTED, EXPIRED)
+                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED, EXPIRED)
                     .and("revealAt").lte(now)
                     .and("endAt").gte(now)
+                    .and("keysAvailable").gt(0)
                     .and("rewardCodes").elemMatch(Criteria.where("claimed").is(false))
                     .and("rewardCodes.claimedByUserId").ne(request.getUserId())
                     .and("winners.userId").ne(request.getUserId()));
@@ -517,6 +519,45 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     }
 
     @Override
+    public void markRewardDeliveryFailed(MarkRewardDeliveryFailedRequest request, StreamObserver<EventActionResponse> responseObserver) {
+        try {
+            validateEventId(request.getEventId());
+            if (request.getWinnerUserId().isBlank()) {
+                throw new IllegalArgumentException("WinnerUserId is required.");
+            }
+
+            Criteria criteria = Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
+                    .and(STATUS_FIELD).nin(DRAFT, CANCELLED)
+                    .and("winners.userId").is(request.getWinnerUserId());
+            Update update = new Update()
+                    .set("rewardDeliveryStatus", REWARD_FAILED)
+                    .set("winners.$.deliveryStatus", REWARD_FAILED)
+                    .filterArray(Criteria.where("rewardCode.claimedByUserId").is(request.getWinnerUserId()))
+                    .set("rewardCodes.$[rewardCode].deliveryStatus", REWARD_FAILED);
+
+            Event updated = mongoTemplate.findAndModify(
+                    new Query(criteria),
+                    update,
+                    FindAndModifyOptions.options().returnNew(true),
+                    Event.class
+            );
+
+            if (updated == null) {
+                throw new IllegalStateException("Reward delivery failure can only be marked for a matching winner.");
+            }
+
+            log.warn("Reward delivery marked as failed for event {} and winner {} at {}.",
+                    request.getEventId(), request.getWinnerUserId(), request.getFailedAt());
+            sendActionSuccess(responseObserver, updated.getId(), "Reward delivery marked as failed.");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            sendActionError(responseObserver, e.getMessage());
+        } catch (Exception e) {
+            log.error("Error marking reward delivery failed for event {}", request.getEventId(), e);
+            sendActionError(responseObserver, "Could not mark reward delivery as failed.");
+        }
+    }
+
+    @Override
     public void getWonKeys(WonKeysRequest request, StreamObserver<WonKeysResponse> responseObserver) {
         try {
             if (request.getUserId().isBlank()) {
@@ -610,7 +651,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                 && event.getWinners() != null
                 && event.getWinners().stream().anyMatch(item -> requesterUserId.equals(item.getUserId()));
         boolean canJoin = isJoinOpenStatus(status) && event.getAvailableSlots() > 0;
-        boolean canClaim = currentUserJoined && !hasClaimed && REVEAL_READY.equals(status) && event.getKeysAvailable() > 0;
+        boolean canClaim = currentUserJoined && !hasClaimed && isClaimOpenStatus(status) && event.getKeysAvailable() > 0;
         EventStatusResponse.Builder builder = EventStatusResponse.newBuilder()
                 .setEventId(nullToEmpty(event.getId()))
                 .setKeysAvailable(event.getKeysAvailable())
@@ -677,10 +718,6 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             return event.getStatus();
         }
 
-        if (FINISHED.equals(event.getStatus()) || EXHAUSTED.equals(event.getStatus())) {
-            return resolveVisibleUntil(event) > now ? event.getStatus() : EXPIRED;
-        }
-
         if (now < event.getStartAt()) {
             return UPCOMING;
         }
@@ -719,6 +756,10 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
     private boolean isJoinOpenStatus(String status) {
         return REGISTRATION_OPEN.equals(status) || ACTIVE_JOIN.equals(status);
+    }
+
+    private boolean isClaimOpenStatus(String status) {
+        return REVEAL_READY.equals(status) || REVEAL_ACTIVE.equals(status);
     }
 
     private boolean hasRequester(String requesterUserId) {
@@ -782,9 +823,9 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         Set<String> uniqueCodes = new HashSet<>();
         List<RewardCode> rewardCodes = new ArrayList<>();
         for (String accessKey : accessKeys) {
-            String code = accessKey == null ? "" : accessKey.trim();
-            if (code.isBlank() || code.length() > MAX_REWARD_CODE_LENGTH) {
-                throw new IllegalArgumentException("Reward codes are required and must be at most 50 characters.");
+            String code = normalizeRewardCode(accessKey);
+            if (!REWARD_CODE_PATTERN.matcher(code).matches()) {
+                throw new IllegalArgumentException("Reward codes must use format XXXX-XXXX-XXXX-XXXX.");
             }
             if (!uniqueCodes.add(code)) {
                 throw new IllegalArgumentException("Reward codes must be unique.");
@@ -796,6 +837,10 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     .build());
         }
         return rewardCodes;
+    }
+
+    private String normalizeRewardCode(String accessKey) {
+        return accessKey == null ? "" : accessKey.trim().toUpperCase();
     }
 
     private boolean hasWinners(Event event) {

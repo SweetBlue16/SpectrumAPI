@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -414,6 +415,80 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void createEventShouldAlwaysPublishAutomatically() {
+        long now = Instant.now().toEpochMilli();
+        AtomicReference<Event> saved = new AtomicReference<>();
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> {
+            Event event = invocation.getArgument(0);
+            event.setId("event-created");
+            saved.set(event);
+            return event;
+        });
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 40_000)
+                .setRevealAt(now + 50_000)
+                .setEndAt(now + 60_000)
+                .setTotalSlots(10)
+                .setPublishNow(false)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("UPCOMING", saved.get().getStatus());
+    }
+
+    @Test
+    void createEventWhenRewardCodeFormatIsInvalidShouldReturnError() {
+        long now = Instant.now().toEpochMilli();
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+
+        dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
+                .setTitle("Invalid code")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 40_000)
+                .setRevealAt(now + 50_000)
+                .setEndAt(now + 60_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DEMO-KEY-1")
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertTrue(observer.value.getMessage().contains("XXXX-XXXX-XXXX-XXXX"));
+        verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void createEventWhenRewardCodesAreDuplicatedShouldReturnError() {
+        long now = Instant.now().toEpochMilli();
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+
+        dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
+                .setTitle("Duplicated code")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 40_000)
+                .setRevealAt(now + 50_000)
+                .setEndAt(now + 60_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .addAccessKeys("dha3-sdfe-32ef-sf5r")
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("Reward codes must be unique.", observer.value.getMessage());
+        verify(eventRepository, never()).save(any());
+    }
+
+    @Test
     void getEventStatusWhenEventExistsShouldReturnDetails() {
         Event event = activeEvent("event-1");
         when(eventRepository.findById("event-1")).thenReturn(Optional.of(event));
@@ -450,6 +525,30 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void getEventStatusWhenStoredFinishedDuringRevealWithCodesShouldStillAllowClaim() {
+        String eventId = "event-stale-finished";
+        String userId = "user-ready";
+        Event event = activeEvent(eventId);
+        long now = Instant.now().toEpochMilli();
+        event.setStatus("FINISHED");
+        event.setJoinDeadlineAt(now - 5_000);
+        event.setRevealAt(now - 1_000);
+        event.setEndAt(now + 20_000);
+        event.setKeysAvailable(1);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setRequesterUserId(userId)
+                .build(), observer);
+
+        assertEquals("REVEAL_READY", observer.value.getStatus());
+        assertTrue(observer.value.getCanClaim());
+    }
+
+    @Test
     void markRewardSentWhenWinnerUserMatchesShouldUpdateDeliveryStatus() {
         String eventId = "event-sent";
         Event updated = activeEvent(eventId);
@@ -472,6 +571,35 @@ class DropsGrpcServiceTest {
                 .setEventId(eventId)
                 .setWinnerUserId("winner-1")
                 .setRewardSentAt(Instant.now().toEpochMilli())
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        verify(mongoTemplate).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
+    }
+
+    @Test
+    void markRewardDeliveryFailedWhenWinnerUserMatchesShouldUpdateDeliveryStatus() {
+        String eventId = "event-failed";
+        Event updated = activeEvent(eventId);
+        updated.setWinners(List.of(Winner.builder()
+                .userId("winner-1")
+                .username("winner")
+                .rewardCode("KEY-1")
+                .claimedAt(Instant.now().toEpochMilli())
+                .deliveryStatus("FAILED")
+                .build()));
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenReturn(updated);
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.markRewardDeliveryFailed(MarkRewardDeliveryFailedRequest.newBuilder()
+                .setEventId(eventId)
+                .setWinnerUserId("winner-1")
+                .setFailedAt(Instant.now().toEpochMilli())
                 .build(), observer);
 
         assertTrue(observer.value.getSuccess());

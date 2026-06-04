@@ -66,6 +66,24 @@ namespace Spectrum.Tests.UnitTests.Controllers
         }
 
         [Fact]
+        public async Task JoinWhenUserIsAdminShouldThrowForbidden()
+        {
+            SetupControllerUser(_controller, Guid.NewGuid(), Constants.Roles.Admin);
+
+            await Assert.ThrowsAsync<Spectrum.API.Exceptions.SpectrumForbiddenException>(() =>
+                _controller.Join("event-123", CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task ClaimWhenUserIsAdminShouldThrowForbidden()
+        {
+            SetupControllerUser(_controller, Guid.NewGuid(), Constants.Roles.Admin);
+
+            await Assert.ThrowsAsync<Spectrum.API.Exceptions.SpectrumForbiddenException>(() =>
+                _controller.Claim("event-123", new ClaimDropDto(), CancellationToken.None));
+        }
+
+        [Fact]
         public async Task CreateWhenCalledByAdminShouldReturnCreated()
         {
             var adminId = Guid.NewGuid();

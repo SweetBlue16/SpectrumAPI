@@ -4,6 +4,7 @@ using Spectrum.API.Exceptions;
 using Spectrum.API.Grpc.Drops;
 using Spectrum.API.Repositories;
 using Spectrum.API.Utilities;
+using System.Text.RegularExpressions;
 
 namespace Spectrum.API.Services.Drops
 {
@@ -11,19 +12,18 @@ namespace Spectrum.API.Services.Drops
     {
         Task<DropActionResultDto> CreateEventAsync(CreateDropEventDto dto, Guid adminId, CancellationToken cancellationToken);
         Task<DropActionResultDto> UpdateEventAsync(string eventId, UpdateDropEventDto dto, CancellationToken cancellationToken);
-        Task<DropActionResultDto> PublishEventAsync(string eventId, bool publishNow, CancellationToken cancellationToken);
-        Task<DropActionResultDto> FinishEventAsync(string eventId, bool cancelIfWithoutWinner, CancellationToken cancellationToken);
         Task<DropActionResultDto> JoinEventAsync(Guid userId, string eventId, CancellationToken cancellationToken);
         Task<ClaimDropResultDto> ClaimAccessKeyAsync(Guid userId, string eventId, ClaimDropDto dto, CancellationToken cancellationToken);
         Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
         Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
-        Task<DropActionResultDto> SendRewardAsync(Guid adminId, string eventId, SendRewardDto dto, CancellationToken cancellationToken);
         Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken);
     }
 
     public class DropsService : IDropsService
     {
         private const int MaximumRewardLength = InputValidationLimits.DropRewardCode;
+        private const string EditLockedMessage = "Este evento está por comenzar, y no puede ser editado";
+        private static readonly Regex RewardCodeRegex = new("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$", RegexOptions.Compiled);
 
         private readonly DropService.DropServiceClient _dropServiceClient;
         private readonly IUserRepository _userRepository;
@@ -63,7 +63,7 @@ namespace Spectrum.API.Services.Drops
                 TotalSlots = dto.TotalSlots,
                 PublicChallengeCode = string.Empty,
                 CreatedByAdminId = adminId.ToString(),
-                PublishNow = dto.PublishNow
+                PublishNow = true
             };
             request.AccessKeys.AddRange(rewardCodes);
 
@@ -76,7 +76,7 @@ namespace Spectrum.API.Services.Drops
             var current = await GetEventStatusAsync(eventId, exposeChallengeCode: false, cancellationToken);
             if (!CanEditEvent(current))
             {
-                throw new SpectrumBusinessException("dropEventNotEditable");
+                throw new SpectrumBusinessException(EditLockedMessage);
             }
 
             ValidateEvent(dto.Title, dto.GameTitle, dto.Platform, dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt, dto.TotalSlots);
@@ -97,33 +97,11 @@ namespace Spectrum.API.Services.Drops
                 EndAt = ToUnixMilliseconds(dto.EndAt),
                 TotalSlots = dto.TotalSlots,
                 PublicChallengeCode = string.Empty,
-                Status = dto.Status.Trim()
+                Status = string.Empty
             };
             request.AccessKeys.AddRange(rewardCodes);
 
             var response = await _dropServiceClient.UpdateEventAsync(request, cancellationToken: cancellationToken);
-
-            return EnsureActionSuccess(response);
-        }
-
-        public async Task<DropActionResultDto> PublishEventAsync(string eventId, bool publishNow, CancellationToken cancellationToken)
-        {
-            var response = await _dropServiceClient.PublishEventAsync(new PublishEventRequest
-            {
-                EventId = eventId,
-                PublishNow = publishNow
-            }, cancellationToken: cancellationToken);
-
-            return EnsureActionSuccess(response);
-        }
-
-        public async Task<DropActionResultDto> FinishEventAsync(string eventId, bool cancelIfWithoutWinner, CancellationToken cancellationToken)
-        {
-            var response = await _dropServiceClient.FinishEventAsync(new FinishEventRequest
-            {
-                EventId = eventId,
-                CancelIfWithoutWinner = cancelIfWithoutWinner
-            }, cancellationToken: cancellationToken);
 
             return EnsureActionSuccess(response);
         }
@@ -252,57 +230,6 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
-        public async Task<DropActionResultDto> SendRewardAsync(Guid adminId, string eventId, SendRewardDto dto, CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrWhiteSpace(dto.RewardCode) || dto.RewardCode.Length > MaximumRewardLength)
-            {
-                throw new SpectrumBusinessException("rewardCodeInvalid");
-            }
-
-            var eventStatus = await GetEventStatusAsync(eventId, exposeChallengeCode: true, cancellationToken);
-            if (!string.Equals(eventStatus.Status, "FINISHED", StringComparison.OrdinalIgnoreCase) ||
-                string.IsNullOrWhiteSpace(eventStatus.WinnerUserId))
-            {
-                throw new SpectrumBusinessException("rewardRequiresFinishedWinner");
-            }
-
-            if (string.Equals(eventStatus.RewardDeliveryStatus, "SENT", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SpectrumBusinessException("rewardAlreadySent");
-            }
-
-            if (!Guid.TryParse(eventStatus.WinnerUserId, out var winnerId))
-            {
-                throw new SpectrumBusinessException("winnerIdInvalid");
-            }
-
-            var winner = await _userRepository.GetUserByIdAsync(winnerId)
-                ?? throw new SpectrumNotFoundException(Constants.ErrorMessages.UserNotFound);
-
-            await _rewardDeliveryService.SendRewardAsync(
-                winner.Email,
-                eventStatus.Title,
-                dto.RewardCode,
-                cancellationToken
-            );
-
-            var sentAt = DateTime.UtcNow;
-            var response = await _dropServiceClient.MarkRewardSentAsync(new MarkRewardSentRequest
-            {
-                EventId = eventId,
-                RewardSentAt = ToUnixMilliseconds(sentAt)
-            }, cancellationToken: cancellationToken);
-
-            _logger.LogInformation(
-                "Admin {AdminId} marked reward as sent for event {EventId} and winner {WinnerId}.",
-                adminId,
-                eventId,
-                winnerId
-            );
-
-            return EnsureActionSuccess(response);
-        }
-
         public async Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken)
         {
             try
@@ -358,6 +285,33 @@ namespace Spectrum.API.Services.Drops
                     ex,
                     "Reward delivery email failed after claim for event {EventId}. Code was not logged.",
                     eventId
+                );
+                await MarkRewardDeliveryFailedAsync(eventId, winnerUserId, cancellationToken);
+            }
+        }
+
+        private async Task MarkRewardDeliveryFailedAsync(
+            string eventId,
+            Guid winnerUserId,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                await _dropServiceClient.MarkRewardDeliveryFailedAsync(new MarkRewardDeliveryFailedRequest
+                {
+                    EventId = eventId,
+                    WinnerUserId = winnerUserId.ToString(),
+                    FailedAt = ToUnixMilliseconds(DateTime.UtcNow)
+                }, cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Could not mark reward delivery failure for event {EventId} and winner {WinnerUserId}.",
+                    eventId,
+                    winnerUserId
                 );
             }
         }
@@ -466,7 +420,7 @@ namespace Spectrum.API.Services.Drops
         private static List<string> ValidateRewardCodes(IEnumerable<string> rewardCodes)
         {
             var normalizedCodes = rewardCodes
-                .Select(code => code?.Trim() ?? string.Empty)
+                .Select(NormalizeRewardCode)
                 .Where(code => !string.IsNullOrWhiteSpace(code))
                 .ToList();
 
@@ -475,7 +429,7 @@ namespace Spectrum.API.Services.Drops
                 throw new SpectrumBusinessException("rewardCodesRequired");
             }
 
-            if (normalizedCodes.Any(code => code.Length > MaximumRewardLength))
+            if (normalizedCodes.Any(code => code.Length != MaximumRewardLength || !RewardCodeRegex.IsMatch(code)))
             {
                 throw new SpectrumBusinessException("rewardCodeInvalid");
             }
@@ -486,6 +440,11 @@ namespace Spectrum.API.Services.Drops
             }
 
             return normalizedCodes;
+        }
+
+        private static string NormalizeRewardCode(string? rewardCode)
+        {
+            return (rewardCode ?? string.Empty).Trim().ToUpperInvariant();
         }
 
         private static long ToUnixMilliseconds(DateTime value)

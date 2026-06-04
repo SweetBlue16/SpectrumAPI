@@ -17,6 +17,7 @@ service DropService {
   rpc PublishEvent (PublishEventRequest) returns (EventActionResponse);
   rpc FinishEvent (FinishEventRequest) returns (EventActionResponse);
   rpc MarkRewardSent (MarkRewardSentRequest) returns (EventActionResponse);
+  rpc MarkRewardDeliveryFailed (MarkRewardDeliveryFailedRequest) returns (EventActionResponse);
 }
 
 message ClaimKeyRequest {
@@ -169,6 +170,12 @@ message MarkRewardSentRequest {
   string event_id = 1;
   int64 reward_sent_at = 2;
   string winner_user_id = 3;
+}
+
+message MarkRewardDeliveryFailedRequest {
+  string event_id = 1;
+  string winner_user_id = 2;
+  int64 failed_at = 3;
 }
 
 message EventActionResponse {

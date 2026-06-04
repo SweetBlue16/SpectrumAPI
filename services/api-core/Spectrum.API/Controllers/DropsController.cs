@@ -51,6 +51,7 @@ namespace Spectrum.API.Controllers
         [HttpPost("event/{eventId}/join")]
         public async Task<IActionResult> Join(string eventId, CancellationToken cancellationToken)
         {
+            EnsureCurrentUserCanParticipate();
             var userId = GetCurrentUserId();
             var result = await _dropsService.JoinEventAsync(userId, eventId, cancellationToken);
             return Ok(result);
@@ -63,6 +64,7 @@ namespace Spectrum.API.Controllers
             CancellationToken cancellationToken
         )
         {
+            EnsureCurrentUserCanParticipate();
             var userId = GetCurrentUserId();
             var result = await _dropsService.ClaimAccessKeyAsync(userId, eventId, dto, cancellationToken);
             return Ok(result);
@@ -85,6 +87,14 @@ namespace Spectrum.API.Controllers
             }
 
             return userId;
+        }
+
+        private void EnsureCurrentUserCanParticipate()
+        {
+            if (User.IsInRole(Constants.Roles.Admin))
+            {
+                throw new SpectrumForbiddenException(Constants.ErrorMessages.InsufficientPermissions);
+            }
         }
     }
 }

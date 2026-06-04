@@ -10,7 +10,7 @@ namespace Spectrum.API.Utilities
         public const int ReportDescription = 500;
         public const int ReviewContent = 2000;
         public const int CommentContent = 500;
-        public const int DropRewardCode = 50;
+        public const int DropRewardCode = 19;
         public const int DropCodesPayload = 2000;
     }
 }
