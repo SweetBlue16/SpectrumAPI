@@ -26,7 +26,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          dotnet sonarscanner begin /k:"ioexception-team_spectrum-api-core" /n:"Spectrum API Core" /o:"ioexception-team" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml" /d:sonar.coverage.exclusions="**/*.cs"
+          dotnet sonarscanner begin /k:"ioexception-team_spectrum-api-core" /n:"Spectrum API Core" /o:"ioexception-team" /d:sonar.token="$SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml"
           dotnet build services/api-core/SpectrumCore.sln
           dotnet test services/api-core/SpectrumCore.sln --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./TestResults
           dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
@@ -55,8 +55,7 @@ jobs:
             -Dsonar.organization=ioexception-team \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN \
-            -Dsonar.coverage.exclusions=**/*.java \
-            -DskipTests
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
   analyze-service-social:
     name: Analyze Service Social
@@ -82,5 +81,4 @@ jobs:
             -Dsonar.organization=ioexception-team \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN \
-            -Dsonar.coverage.exclusions=**/*.java \
-            -DskipTests
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
