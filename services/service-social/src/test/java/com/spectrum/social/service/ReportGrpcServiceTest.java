@@ -24,6 +24,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ReportGrpcServiceTest {
 
+    private final Instant FIXED_INSTANT = Instant.parse("2026-06-01T12:00:00Z");
+
     @Mock
     private ReportRepository reportRepository;
 
@@ -107,7 +109,7 @@ class ReportGrpcServiceTest {
         report1.setTargetType("REVIEW");
         report1.setReason("Spam");
         report1.setStatus("PENDING");
-        report1.setReportedAt(Instant.now());
+        report1.setReportedAt(FIXED_INSTANT);
 
         Report report2 = new Report();
         report2.setId("report-2");
@@ -116,7 +118,7 @@ class ReportGrpcServiceTest {
         report2.setTargetType("COMMENT");
         report2.setReason("Harassment");
         report2.setStatus("PENDING");
-        report2.setReportedAt(Instant.now());
+        report2.setReportedAt(FIXED_INSTANT);
 
         List<Report> mockReports = Arrays.asList(report1, report2);
         when(reportRepository.findByStatus("PENDING")).thenReturn(mockReports);

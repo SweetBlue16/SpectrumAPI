@@ -33,6 +33,7 @@ public class CommentGrpcService extends CommentServiceGrpc.CommentServiceImplBas
     private static final int PAGE_SIZE = 20;
     private static final int MAX_CONTENT_LENGTH = 500;
     private static final String ADMIN_ROLE = "ADMIN";
+    private static final String REVIEW_ID_FIELD = "reviewId";
 
     private final CommentRepository commentRepository;
     private final MongoTemplate mongoTemplate;
@@ -96,7 +97,7 @@ public class CommentGrpcService extends CommentServiceGrpc.CommentServiceImplBas
             return;
         }
 
-        Criteria criteria = Criteria.where("reviewId").in(request.getReviewIdsList());
+        Criteria criteria = Criteria.where(REVIEW_ID_FIELD).in(request.getReviewIdsList());
         if (request.getFrom() > 0 || request.getTo() > 0) {
             Criteria publishedAtCriteria = Criteria.where("publishedAt");
             if (request.getFrom() > 0) {
@@ -110,8 +111,8 @@ public class CommentGrpcService extends CommentServiceGrpc.CommentServiceImplBas
 
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(criteria),
-                Aggregation.group("reviewId").count().as("count"),
-                Aggregation.project("count").and("_id").as("reviewId")
+                Aggregation.group(REVIEW_ID_FIELD).count().as("count"),
+                Aggregation.project("count").and("_id").as(REVIEW_ID_FIELD)
         );
 
         List<CommentCountDocument> documents = mongoTemplate
