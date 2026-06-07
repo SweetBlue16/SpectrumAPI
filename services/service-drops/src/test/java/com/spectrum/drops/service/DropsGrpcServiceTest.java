@@ -122,7 +122,7 @@ class DropsGrpcServiceTest {
                     event.getRewardCodes().get(0).setClaimed(true);
                     event.getRewardCodes().get(0).setClaimedByUserId("winner");
                     event.getRewardCodes().get(0).setClaimedByUsername("winner-name");
-                    event.getRewardCodes().get(0).setClaimedAt(Instant.now().toEpochMilli());
+                    event.getRewardCodes().get(0).setClaimedAt(getNow());
                     event.setKeysAvailable(0);
                     event.setStatus("EXHAUSTED");
                     return event;
