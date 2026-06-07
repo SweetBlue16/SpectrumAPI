@@ -43,7 +43,7 @@ namespace Spectrum.Tests.UnitTests.Utilities
             var exception = await Assert.ThrowsAsync<SpectrumUnauthorizedException>(() =>
                 AuthUtilities.ValidateLoginInput(deletedUser, loginDto));
 
-            Assert.Equal(Constants.ErrorMessages.InvalidCredentials, exception.Message);
+            Assert.Equal(Constants.ErrorMessages.AccountDeleted, exception.Message);
         }
 
         [Fact]

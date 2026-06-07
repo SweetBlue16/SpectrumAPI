@@ -123,7 +123,8 @@ namespace Spectrum.API.Services.Auth
         /// <inheritdoc />
         public async Task<AuthResponseDto> LoginAsync(LoginDto loginDto)
         {
-            var user = await _userRepository.GetUserByEmailAsync(NormalizeEmail(loginDto.Email));
+            var user = await _userRepository.GetUserByEmailIncludingDeletedAsync(NormalizeEmail(loginDto.Email)) ??
+                await _userRepository.GetUserByEmailAsync(NormalizeEmail(loginDto.Email));
             await AuthUtilities.ValidateLoginInput(user, loginDto);
             var authenticatedUser = user!;
 
@@ -259,8 +260,28 @@ namespace Spectrum.API.Services.Auth
         public async Task<MessageResponseDto> ForgotPasswordAsync(ForgotPasswordDto forgotPasswordDto)
         {
             var email = NormalizeEmail(forgotPasswordDto.Email);
-            var user = await _userRepository.GetUserByEmailAsync(email);
-            if (user != null && user.IsEmailVerified && !user.IsSuspended)
+            var user = await _userRepository.GetUserByEmailIncludingDeletedAsync(email);
+            if (user == null)
+            {
+                throw new SpectrumBusinessException(Constants.ErrorMessages.EmailNotRegistered);
+            }
+
+            if (user.IsDeleted)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountDeleted);
+            }
+
+            if (user.IsBanned)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountBanned);
+            }
+
+            if (user.IsSuspended)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountSuspended);
+            }
+
+            if (user.IsEmailVerified)
             {
                 try
                 {
@@ -330,7 +351,7 @@ namespace Spectrum.API.Services.Auth
         /// <exception cref="SpectrumUnauthorizedException">Thrown if the existing user account associated with the provided email is suspended.</exception>
         private async Task<User> CreateOrGetGoogleUserAsync(Payload payload)
         {
-            var user = await _userRepository.GetUserByEmailAsync(payload.Email);
+            var user = await _userRepository.GetUserByEmailIncludingDeletedAsync(payload.Email);
             if (user == null)
             {
                 user = new User
@@ -345,6 +366,14 @@ namespace Spectrum.API.Services.Auth
                     IsEmailVerified = payload.EmailVerified
                 };
                 await _userRepository.AddUserAsync(user);
+            }
+            else if (user.IsDeleted)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountDeleted);
+            }
+            else if (user.IsBanned)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountBanned);
             }
             else if (user.IsSuspended)
             {

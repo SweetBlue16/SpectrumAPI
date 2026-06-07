@@ -44,7 +44,11 @@
             public const string InvalidCredentials = "invalidCredentials";
             public const string AuthProviderError = "authProviderError";
             public const string AccountSuspended = "accountSuspended";
+            public const string AccountBanned = "accountBanned";
+            public const string AccountDeleted = "accountDeleted";
             public const string AccountAlreadySuspended = "accountAlreadySuspended";
+            public const string AccountAlreadyBanned = "accountAlreadyBanned";
+            public const string AccountAlreadyActive = "accountAlreadyActive";
             public const string UsernameAlreadyTaken = "usernameAlreadyTaken";
             public const string InvalidAdminKey = "invalidAdminKey";
             public const string Unauthorized = "unauthorized";
@@ -72,6 +76,7 @@
             public const string VerificationCodeTooManyAttempts = "verificationCodeTooManyAttempts";
             public const string VerificationCodeSent = "verificationCodeSent";
             public const string PasswordResetInstructionsSent = "passwordResetInstructionsSent";
+            public const string EmailNotRegistered = "emailNotRegistered";
             public const string PasswordPolicyViolation = "passwordPolicyViolation";
             public const string SmtpConfigurationInvalid = "smtpConfigurationInvalid";
             public const string ResendCodeTooSoon = "resendCodeTooSoon";

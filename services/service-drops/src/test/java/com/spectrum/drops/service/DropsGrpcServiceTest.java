@@ -394,6 +394,48 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void joinEventWhenUserAlreadyJoinedShouldRejectWithoutAtomicSlotUpdate() {
+        String eventId = "event-duplicate-join";
+        String userId = "user-1";
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.joinEvent(JoinEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setUserId(userId)
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("duplicateParticipation", observer.value.getMessage());
+        verify(participantRepository, never()).save(any(EventParticipant.class));
+        verify(mongoTemplate, never()).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
+    }
+
+    @Test
+    void joinEventWhenAtomicSlotUpdateFailsShouldRollbackInsertedParticipant() {
+        String eventId = "event-full";
+        String userId = "user-1";
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(false);
+        when(mongoTemplate.findAndModify(
+                any(Query.class),
+                any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class),
+                eq(Event.class)))
+                .thenReturn(null);
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.joinEvent(JoinEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setUserId(userId)
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("Event is not accepting participants.", observer.value.getMessage());
+        verify(participantRepository).save(any(EventParticipant.class));
+        verify(participantRepository, atLeastOnce()).deleteByEventIdAndUserId(eventId, userId);
+    }
+
+    @Test
     void createEventWhenDatesAreInvalidShouldReturnError() {
         long now = Instant.now().toEpochMilli();
         CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
@@ -489,6 +531,135 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void updateEventWhenEditableShouldUpdateFieldsAndRecalculateRewardInventory() {
+        String eventId = "event-update";
+        long now = Instant.now().toEpochMilli();
+        Event event = activeEvent(eventId);
+        event.setStatus("UPCOMING");
+        event.setStartAt(now + 30 * 60_000);
+        event.setParticipantsCount(2);
+        event.getRewardCodes().get(0).setClaimed(true);
+        event.setKeysAvailable(1);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+        when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.updateEvent(UpdateEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setTitle("  Updated title  ")
+                .setDescription("Updated description")
+                .setImageUrl("https://example.test/updated.jpg")
+                .setGameTitle("Halo Infinite")
+                .setRawgGameId(123)
+                .setPlatform("PC")
+                .setStartAt(now + 30 * 60_000)
+                .setJoinDeadlineAt(now + 40 * 60_000)
+                .setRevealAt(now + 50 * 60_000)
+                .setEndAt(now + 60 * 60_000)
+                .setTotalSlots(5)
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("Updated title", event.getTitle());
+        assertEquals(3, event.getAvailableSlots());
+        assertEquals(2, event.getKeysTotal());
+        assertEquals(1, event.getKeysAvailable());
+        assertEquals("", event.getPublicChallengeCode());
+        verify(eventRepository).save(event);
+    }
+
+    @Test
+    void updateEventWhenTotalSlotsWouldBeBelowParticipantsShouldReturnError() {
+        String eventId = "event-update-slots";
+        long now = Instant.now().toEpochMilli();
+        Event event = activeEvent(eventId);
+        event.setStatus("UPCOMING");
+        event.setStartAt(now + 30 * 60_000);
+        event.setParticipantsCount(4);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.updateEvent(UpdateEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setTitle("Updated")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 30 * 60_000)
+                .setJoinDeadlineAt(now + 40 * 60_000)
+                .setRevealAt(now + 50 * 60_000)
+                .setEndAt(now + 60 * 60_000)
+                .setTotalSlots(3)
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("Total slots cannot be lower than current participants.", observer.value.getMessage());
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    @Test
+    void publishEventWhenEventIsEditableShouldSetPublishedStatusAndSave() {
+        String eventId = "event-publish";
+        Event event = activeEvent(eventId);
+        event.setStartAt(Instant.now().toEpochMilli() + 60_000);
+        event.setStatus("DRAFT");
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.publishEvent(PublishEventRequest.newBuilder().setEventId(eventId).build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("UPCOMING", event.getStatus());
+        verify(eventRepository).save(event);
+    }
+
+    @Test
+    void publishEventWhenEventAlreadyFinishedShouldReturnErrorWithoutSave() {
+        String eventId = "event-finished";
+        Event event = exhaustedEvent(eventId);
+        event.setStatus("FINISHED");
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.publishEvent(PublishEventRequest.newBuilder().setEventId(eventId).build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("Finished or cancelled events cannot be published.", observer.value.getMessage());
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    @Test
+    void finishEventWithoutWinnerAndCancelFlagShouldCancelEvent() {
+        String eventId = "event-cancel";
+        Event event = activeEvent(eventId);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.finishEvent(FinishEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setCancelIfWithoutWinner(true)
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("CANCELLED", event.getStatus());
+        assertNotNull(event.getFinishedAt());
+        verify(eventRepository).save(event);
+    }
+
+    @Test
+    void finishEventWhenAlreadyClosedShouldReturnSuccessWithoutSavingAgain() {
+        String eventId = "event-closed";
+        Event event = exhaustedEvent(eventId);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.finishEvent(FinishEventRequest.newBuilder().setEventId(eventId).build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("Event already closed.", observer.value.getMessage());
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    @Test
     void getEventStatusWhenEventExistsShouldReturnDetails() {
         Event event = activeEvent("event-1");
         when(eventRepository.findById("event-1")).thenReturn(Optional.of(event));
@@ -499,6 +670,29 @@ class DropsGrpcServiceTest {
         assertEquals("event-1", observer.value.getEventId());
         assertEquals("REGISTRATION_OPEN", observer.value.getStatus());
         assertEquals(10, observer.value.getTotalSlots());
+    }
+
+    @Test
+    void getEventStatusWhenEventHasNotStartedShouldReturnUpcomingAndNoJoinAction() {
+        String eventId = "event-upcoming";
+        long now = Instant.now().toEpochMilli();
+        Event event = activeEvent(eventId);
+        event.setStartAt(now + 60_000);
+        event.setJoinDeadlineAt(now + 120_000);
+        event.setRevealAt(now + 180_000);
+        event.setEndAt(now + 240_000);
+        event.setStatus("UPCOMING");
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setRequesterUserId("user-1")
+                .build(), observer);
+
+        assertEquals("UPCOMING", observer.value.getStatus());
+        assertFalse(observer.value.getCanJoin());
+        assertFalse(observer.value.getCanClaim());
     }
 
     @Test
@@ -522,6 +716,79 @@ class DropsGrpcServiceTest {
         assertEquals("REVEAL_READY", observer.value.getStatus());
         assertTrue(observer.value.getCurrentUserJoined());
         assertTrue(observer.value.getCanClaim());
+    }
+
+    @Test
+    void getEventStatusShouldNeverExposeChallengeOrRewardCodesInPublicStatus() {
+        String eventId = "event-safe-status";
+        Event event = activeEvent(eventId);
+        event.setPublicChallengeCode("SECRET-CHALLENGE");
+        event.setWinners(List.of(Winner.builder()
+                .userId("winner-1")
+                .username("winner")
+                .rewardCode("DHA3-SDFE-32EF-SF5R")
+                .claimedAt(Instant.now().toEpochMilli())
+                .deliveryStatus("SENT")
+                .build()));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder().setEventId(eventId).build(), observer);
+
+        assertEquals("", observer.value.getPublicChallengeCode());
+        assertEquals(1, observer.value.getWinnersCount());
+        assertEquals("winner", observer.value.getWinners(0).getUsername());
+        assertEquals("winner-1", observer.value.getWinners(0).getUserId());
+    }
+
+    @Test
+    void listEventsShouldReturnPagedEventsWithRequesterJoinedFlags() {
+        String requesterId = "user-1";
+        Event first = activeEvent("event-joined");
+        Event second = activeEvent("event-open");
+        List<Event> events = List.of(first, second);
+        when(mongoTemplate.count(any(Query.class), eq(Event.class))).thenReturn(2L);
+        when(mongoTemplate.find(any(Query.class), eq(Event.class))).thenReturn(events);
+        when(participantRepository.findByUserId(requesterId)).thenReturn(List.of(
+                EventParticipant.builder()
+                        .eventId("event-joined")
+                        .userId(requesterId)
+                        .joinedAt(Instant.now().toEpochMilli())
+                        .build()
+        ));
+
+        CapturingObserver<EventListResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.listEvents(ListEventsRequest.newBuilder()
+                .setScope("CURRENT")
+                .setPage(0)
+                .setPageSize(100)
+                .setRequesterUserId(requesterId)
+                .build(), observer);
+
+        assertEquals(2, observer.value.getTotalCount());
+        assertEquals(1, observer.value.getPage());
+        assertEquals(50, observer.value.getPageSize());
+        assertTrue(observer.value.getEvents(0).getCurrentUserJoined());
+        assertFalse(observer.value.getEvents(1).getCurrentUserJoined());
+    }
+
+    @Test
+    void claimAccessKeyWhenUserIsNotRegisteredShouldRejectWithoutAtomicClaim() {
+        String eventId = "event-unregistered";
+        String userId = "user-not-joined";
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(false);
+
+        CapturingObserver<ClaimKeyResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                .setEventId(eventId)
+                .setUserId(userId)
+                .setUsername("not-joined")
+                .build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("", observer.value.getAccessKeyCode());
+        assertEquals("User must join before claiming.", observer.value.getMessage());
+        verify(mongoTemplate, never()).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
     }
 
     @Test

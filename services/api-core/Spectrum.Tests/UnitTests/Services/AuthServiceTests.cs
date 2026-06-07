@@ -204,6 +204,61 @@ namespace Spectrum.Tests.UnitTests.Services
         }
 
         [Fact]
+        public async Task TestLoginAsyncWhenUserIsBannedShouldThrowSpectrumUnauthorizedException()
+        {
+            var password = "CorrectPassword123!";
+            var loginDto = new LoginDto { Email = "banned@test.com", Password = password };
+            var existingUser = new User
+            {
+                Email = loginDto.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+                IsBanned = true,
+                IsEmailVerified = true
+            };
+
+            _userRepositoryMock
+                .Setup(r => r.GetUserByEmailIncludingDeletedAsync(loginDto.Email))
+                .ReturnsAsync(existingUser);
+
+            var exception = await Assert.ThrowsAsync<SpectrumUnauthorizedException>(() =>
+                _authService.LoginAsync(loginDto));
+
+            Assert.Equal(Constants.ErrorMessages.AccountBanned, exception.Message);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsyncWhenEmailIsNotRegisteredShouldThrowBusinessException()
+        {
+            var dto = new ForgotPasswordDto { Email = "missing@test.com" };
+            _userRepositoryMock
+                .Setup(r => r.GetUserByEmailIncludingDeletedAsync(dto.Email))
+                .ReturnsAsync((User?)null);
+
+            var exception = await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _authService.ForgotPasswordAsync(dto));
+
+            Assert.Equal(Constants.ErrorMessages.EmailNotRegistered, exception.Message);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsyncWhenEmailExistsShouldSendResetCode()
+        {
+            var dto = new ForgotPasswordDto { Email = "user@test.com" };
+            var user = new User { Id = Guid.NewGuid(), Email = dto.Email, IsEmailVerified = true };
+            _userRepositoryMock
+                .Setup(r => r.GetUserByEmailIncludingDeletedAsync(dto.Email))
+                .ReturnsAsync(user);
+            _verificationCodeServiceMock
+                .Setup(service => service.CreateCodeAsync(VerificationPurpose.PasswordReset, dto.Email, user.Id))
+                .ReturnsAsync("123456");
+
+            var result = await _authService.ForgotPasswordAsync(dto);
+
+            Assert.Equal(Constants.ErrorMessages.PasswordResetInstructionsSent, result.Message);
+            _emailServiceMock.Verify(service => service.SendPasswordResetAsync(dto.Email, "123456"), Times.Once);
+        }
+
+        [Fact]
         public async Task TestRegisterAdminAsyncWhenValidInputShouldCreateAdminUserAndDetails()
         {
             var masterKey = "SuperSecretMasterKey";

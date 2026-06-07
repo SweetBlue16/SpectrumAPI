@@ -5,6 +5,8 @@ using Spectrum.API.Data;
 using Spectrum.API.Dtos.Reports;
 using Spectrum.API.Exceptions;
 using Spectrum.API.Services.Reports;
+using Spectrum.API.Services.Reviews;
+using Spectrum.API.Services.Profile;
 using Spectrum.API.Utilities;
 using System.Security.Claims;
 
@@ -18,11 +20,19 @@ namespace Spectrum.API.Controllers
         private static readonly string[] KnownStatuses = ["PENDING", "RESOLVED", "DISMISSED"];
 
         private readonly IReportService _reportService;
+        private readonly IReviewService _reviewService;
+        private readonly IUserModerationService _userModerationService;
         private readonly SpectrumDbContext _context;
 
-        public AdminReportsController(IReportService reportService, SpectrumDbContext context)
+        public AdminReportsController(
+            IReportService reportService,
+            IReviewService reviewService,
+            IUserModerationService userModerationService,
+            SpectrumDbContext context)
         {
             _reportService = reportService;
+            _reviewService = reviewService;
+            _userModerationService = userModerationService;
             _context = context;
         }
 
@@ -120,6 +130,61 @@ namespace Spectrum.API.Controllers
             return Ok(new { Message = "Report status updated." });
         }
 
+        [HttpPost("{reportId}/delete-content")]
+        public async Task<IActionResult> DeleteReportedContent(
+            string reportId,
+            [FromBody] UpdateReportStatusDto dto,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentAdminId();
+            var report = await FindReportAsync(reportId, cancellationToken);
+            var reason = ResolveRequiredReason(dto);
+
+            if (report.TargetType.Equals("REVIEW", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Guid.TryParse(report.TargetId, out var reviewId))
+                {
+                    throw new SpectrumBusinessException(Constants.ErrorMessages.InvalidParameterFormat);
+                }
+
+                await _reviewService.DeleteAsync(reviewId, moderatorId, isAdmin: true, deletionReason: reason, cancellationToken);
+            }
+            else
+            {
+                throw new SpectrumBusinessException("reportTargetTypeNotSupported");
+            }
+
+            await _reportService.UpdateReportStatusAsync(reportId, moderatorId, new UpdateReportStatusDto
+            {
+                NewStatus = "RESOLVED",
+                Status = "RESOLVED",
+                ResolutionNotes = reason,
+                AdminNotes = reason
+            }, cancellationToken);
+
+            return Ok(new { Message = "Reported content deleted." });
+        }
+
+        [HttpPost("{reportId}/suspend-author")]
+        public async Task<IActionResult> SuspendReportedAuthor(
+            string reportId,
+            [FromBody] UpdateReportStatusDto dto,
+            CancellationToken cancellationToken)
+        {
+            var moderatorId = GetCurrentAdminId();
+            var report = await FindReportAsync(reportId, cancellationToken);
+            var targetUserId = await ResolveReportTargetUserIdAsync(report, cancellationToken);
+            var reason = string.IsNullOrWhiteSpace(dto.AdminNotes) ? dto.ResolutionNotes : dto.AdminNotes;
+
+            await _userModerationService.ToggleSuspensionAsync(
+                targetUserId,
+                suspend: true,
+                requesterId: moderatorId,
+                reason: reason,
+                cancellationToken: cancellationToken);
+            return Ok(new { Message = "Reported author suspended." });
+        }
+
         private async Task EnrichReportsAsync(List<ReportDetailsDto> reports, CancellationToken cancellationToken)
         {
             if (reports.Count == 0)
@@ -182,6 +247,70 @@ namespace Spectrum.API.Controllers
         private static Guid? TryParseGuid(string value)
         {
             return Guid.TryParse(value, out var parsed) ? parsed : null;
+        }
+
+        private async Task<ReportDetailsDto> FindReportAsync(string reportId, CancellationToken cancellationToken)
+        {
+            foreach (var status in KnownStatuses)
+            {
+                var report = (await _reportService.GetReportsByStatusAsync(status, cancellationToken))
+                    .FirstOrDefault(item => item.ReportId == reportId);
+
+                if (report != null)
+                {
+                    return report;
+                }
+            }
+
+            throw new SpectrumNotFoundException(Constants.ErrorMessages.ResourceNotFound);
+        }
+
+        private async Task<Guid> ResolveReportTargetUserIdAsync(ReportDetailsDto report, CancellationToken cancellationToken)
+        {
+            if (report.TargetType.Equals("USER", StringComparison.OrdinalIgnoreCase) &&
+                Guid.TryParse(report.TargetId, out var reportedUserId))
+            {
+                return reportedUserId;
+            }
+
+            if (report.TargetType.Equals("REVIEW", StringComparison.OrdinalIgnoreCase) &&
+                Guid.TryParse(report.TargetId, out var reviewId))
+            {
+                var userId = await _context.Reviews
+                    .IgnoreQueryFilters()
+                    .Where(review => review.Id == reviewId)
+                    .Select(review => review.UserId)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (userId != Guid.Empty)
+                {
+                    return userId;
+                }
+            }
+
+            throw new SpectrumBusinessException(Constants.ErrorMessages.InvalidParameterFormat);
+        }
+
+        private Guid GetCurrentAdminId()
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+            if (!Guid.TryParse(userIdStr, out var moderatorId))
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.Unauthorized);
+            }
+
+            return moderatorId;
+        }
+
+        private static string ResolveRequiredReason(UpdateReportStatusDto dto)
+        {
+            var reason = string.IsNullOrWhiteSpace(dto.ResolutionNotes) ? dto.AdminNotes : dto.ResolutionNotes;
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                throw new SpectrumBusinessException("deleteReasonRequired");
+            }
+
+            return reason.Trim();
         }
     }
 }

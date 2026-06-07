@@ -29,11 +29,15 @@ namespace Spectrum.API.Repositories
         /// <returns>The matching <see cref="User"/> entity, or null if no user is found.</returns>
         Task<User?> GetUserByEmailAsync(string email);
 
+        Task<User?> GetUserByEmailIncludingDeletedAsync(string email);
+
         /// <summary>
         /// Retrieves a user record by their unique system identifier.
         /// </summary>
         /// <returns>The matching <see cref="User"/> entity, or null if no user is found.</returns>
         Task<User?> GetUserByIdAsync(Guid id);
+
+        Task<User?> GetUserByIdForModerationAsync(Guid id);
 
         Task<IReadOnlyDictionary<Guid, PublicUserSummaryDto>> GetPublicUsersByIdsAsync(
             IEnumerable<Guid> userIds,
@@ -62,8 +66,11 @@ namespace Spectrum.API.Repositories
         /// <param name="page">The page number to retrieve.</param>
         /// <param name="pageSize">The number of items per page.</param>
         /// <param name="searchTerm">The term to search for in usernames or emails.</param>
+        /// <param name="status">Optional moderation status filter: ACTIVE, SUSPENDED, BANNED, DELETED, or ALL.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>A paged result containing the matching users.</returns>
+        Task<PagedResult<User>> GetPaginatedUsersAsync(int page, int pageSize, string? searchTerm, string? status = null, CancellationToken cancellationToken = default);
+
         Task<PagedResult<User>> GetPaginatedUsersAsync(int page, int pageSize, string? searchTerm, CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -134,7 +141,9 @@ namespace Spectrum.API.Repositories
         /// <inheritdoc />
         public async Task<bool> EmailExistsAsync(string email)
         {
-            return await _context.Users.AnyAsync(u => u.Email == email);
+            return await _context.Users
+                .IgnoreQueryFilters()
+                .AnyAsync(u => u.Email == email);
         }
 
         /// <inheritdoc />
@@ -143,10 +152,24 @@ namespace Spectrum.API.Repositories
             return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
         }
 
+        public async Task<User?> GetUserByEmailIncludingDeletedAsync(string email)
+        {
+            return await _context.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == email);
+        }
+
         /// <inheritdoc />
         public async Task<User?> GetUserByIdAsync(Guid id)
         {
             return await _context.Users.FirstOrDefaultAsync(u => u.Id == id && !u.IsDeleted);
+        }
+
+        public async Task<User?> GetUserByIdForModerationAsync(Guid id)
+        {
+            return await _context.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Id == id);
         }
 
         public async Task<IReadOnlyDictionary<Guid, PublicUserSummaryDto>> GetPublicUsersByIdsAsync(
@@ -192,9 +215,9 @@ namespace Spectrum.API.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<PagedResult<User>> GetPaginatedUsersAsync(int page, int pageSize, string? searchTerm, CancellationToken cancellationToken = default)
+        public async Task<PagedResult<User>> GetPaginatedUsersAsync(int page, int pageSize, string? searchTerm, string? status = null, CancellationToken cancellationToken = default)
         {
-            var query = _context.Users.AsQueryable();
+            var query = _context.Users.IgnoreQueryFilters().AsQueryable();
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
                 var normalizedSearch = searchTerm.Trim().ToLower();
@@ -202,6 +225,15 @@ namespace Spectrum.API.Repositories
                     u.Username.ToLower().Contains(normalizedSearch) ||
                     u.Email.ToLower().Contains(normalizedSearch));
             }
+
+            query = NormalizeModerationStatus(status) switch
+            {
+                "ACTIVE" => query.Where(user => !user.IsDeleted && !user.IsBanned && !user.IsSuspended),
+                "SUSPENDED" => query.Where(user => !user.IsDeleted && !user.IsBanned && user.IsSuspended),
+                "BANNED" => query.Where(user => !user.IsDeleted && user.IsBanned),
+                "DELETED" => query.Where(user => user.IsDeleted),
+                _ => query
+            };
 
             var totalItems = await query.CountAsync(cancellationToken);
             var users = await query
@@ -217,6 +249,18 @@ namespace Spectrum.API.Repositories
                 Page = page,
                 PageSize = pageSize
             };
+        }
+
+        public Task<PagedResult<User>> GetPaginatedUsersAsync(int page, int pageSize, string? searchTerm, CancellationToken cancellationToken = default)
+        {
+            return GetPaginatedUsersAsync(page, pageSize, searchTerm, status: null, cancellationToken);
+        }
+
+        private static string? NormalizeModerationStatus(string? status)
+        {
+            return string.IsNullOrWhiteSpace(status) || status.Equals("ALL", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : status.Trim().ToUpperInvariant();
         }
 
         /// <inheritdoc />

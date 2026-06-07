@@ -79,14 +79,25 @@ namespace Spectrum.API.Utilities
         /// <exception cref="SpectrumBusinessException">Thrown if the account is currently suspended.</exception>
         public static async Task ValidateLoginInput(User? user, LoginDto loginDto)
         {
-            if (user == null || user.IsDeleted)
+            if (user == null)
             {
                 throw new SpectrumUnauthorizedException(Constants.ErrorMessages.InvalidCredentials);
             }
 
-            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            if (!string.IsNullOrWhiteSpace(user.PasswordHash) &&
+                !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
             {
                 throw new SpectrumUnauthorizedException(Constants.ErrorMessages.InvalidCredentials);
+            }
+
+            if (user.IsDeleted)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountDeleted);
+            }
+
+            if (user.IsBanned)
+            {
+                throw new SpectrumUnauthorizedException(Constants.ErrorMessages.AccountBanned);
             }
 
             if (user.IsSuspended)

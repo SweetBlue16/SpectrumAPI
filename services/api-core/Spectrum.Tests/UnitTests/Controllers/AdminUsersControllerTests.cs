@@ -23,14 +23,14 @@ namespace Spectrum.Tests.UnitTests.Controllers
         {
             var userId = Guid.NewGuid();
             _moderationServiceMock
-                .Setup(s => s.ToggleSuspensionAsync(userId, true, It.IsAny<CancellationToken>()))
+                .Setup(s => s.ToggleSuspensionAsync(userId, true, null, null, It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
             var result = await _controller.SuspendUser(userId, CancellationToken.None);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
-            _moderationServiceMock.Verify(s => s.ToggleSuspensionAsync(userId, true, It.IsAny<CancellationToken>()), Times.Once);
+            _moderationServiceMock.Verify(s => s.ToggleSuspensionAsync(userId, true, null, null, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -38,14 +38,14 @@ namespace Spectrum.Tests.UnitTests.Controllers
         {
             var userId = Guid.NewGuid();
             _moderationServiceMock
-                .Setup(s => s.ToggleSuspensionAsync(userId, false, It.IsAny<CancellationToken>()))
+                .Setup(s => s.ReactivateUserAsync(userId, null, It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
             var result = await _controller.ReactivateUser(userId, CancellationToken.None);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
-            _moderationServiceMock.Verify(s => s.ToggleSuspensionAsync(userId, false, It.IsAny<CancellationToken>()), Times.Once);
+            _moderationServiceMock.Verify(s => s.ReactivateUserAsync(userId, null, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -60,7 +60,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
             };
 
             _moderationServiceMock
-                .Setup(s => s.GetUsersForModerationAsync(1, 10, null, It.IsAny<CancellationToken>()))
+                .Setup(s => s.GetUsersForModerationAsync(1, 10, null, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(expectedPagedResult);
 
             var result = await _controller.GetUsers(1, 10, null, CancellationToken.None);

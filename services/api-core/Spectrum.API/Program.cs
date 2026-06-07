@@ -145,6 +145,7 @@ builder.Services.AddScoped<IAdminDetailRepository, AdminDetailRepository>();
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAdminProfileService, AdminProfileService>();
+builder.Services.AddScoped<IAdminNotificationService, AdminNotificationService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<ICommentAnalyticsService, CommentAnalyticsService>();
 builder.Services.AddScoped<IHomeDashboardService, HomeDashboardService>();

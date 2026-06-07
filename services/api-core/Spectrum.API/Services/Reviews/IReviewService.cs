@@ -2,6 +2,7 @@ using Spectrum.API.Dtos.Reviews;
 using Spectrum.API.Exceptions;
 using Spectrum.API.Models;
 using Spectrum.API.Repositories;
+using Spectrum.API.Services.Admin;
 using Spectrum.API.Services.Email;
 using Spectrum.API.Services.Votes;
 
@@ -70,6 +71,7 @@ namespace Spectrum.API.Services.Reviews
         private readonly IReviewRepository _reviewRepository;
         private readonly IGameRepository? _gameRepository;
         private readonly IEmailService? _emailService;
+        private readonly IAdminNotificationService? _adminNotificationService;
         private readonly IVoteService? _voteService;
         private readonly ILogger<ReviewService>? _logger;
 
@@ -77,12 +79,14 @@ namespace Spectrum.API.Services.Reviews
             IReviewRepository reviewRepository,
             IGameRepository? gameRepository = null,
             IEmailService? emailService = null,
+            IAdminNotificationService? adminNotificationService = null,
             IVoteService? voteService = null,
             ILogger<ReviewService>? logger = null)
         {
             _reviewRepository = reviewRepository;
             _gameRepository = gameRepository;
             _emailService = emailService;
+            _adminNotificationService = adminNotificationService;
             _voteService = voteService;
             _logger = logger;
         }
@@ -277,7 +281,14 @@ namespace Spectrum.API.Services.Reviews
             await _reviewRepository.SaveChangesAsync(cancellationToken);
             if (isAdmin)
             {
-                await TrySendReviewDeletedEmailAsync(review, cancellationToken);
+                if (_adminNotificationService is not null && !string.IsNullOrWhiteSpace(normalizedReason))
+                {
+                    await _adminNotificationService.NotifyReviewDeletedAsync(review, normalizedReason, cancellationToken);
+                }
+                else
+                {
+                    await TrySendReviewDeletedEmailAsync(review, cancellationToken);
+                }
             }
         }
 

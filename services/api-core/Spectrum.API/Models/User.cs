@@ -75,6 +75,9 @@ namespace Spectrum.API.Models
         [Column("is_suspended")]
         public bool IsSuspended { get; set; } = false;
 
+        [Column("is_banned")]
+        public bool IsBanned { get; set; } = false;
+
         /// <summary>
         /// Implements the "soft-delete" pattern. When true, the user is logically removed from active 
         /// application queries to preserve historical referential integrity (e.g., past reviews/votes) 

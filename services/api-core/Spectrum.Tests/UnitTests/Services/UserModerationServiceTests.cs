@@ -143,6 +143,47 @@ namespace Spectrum.Tests.UnitTests.Services
         }
 
         [Fact]
+        public async Task ToggleBanAsyncWhenValidReviewerShouldBanAndSuspend()
+        {
+            var userId = Guid.NewGuid();
+            var user = new User { Id = userId, Role = Constants.Roles.Reviewer, Email = "user@spectrum.test" };
+
+            _userRepositoryMock.Setup(r => r.GetUserByIdAsync(userId)).ReturnsAsync(user);
+            _userRepositoryMock.Setup(r => r.UpdateUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            await _service.ToggleBanAsync(userId, true, requesterId: null, reason: "Policy violation", CancellationToken.None);
+
+            Assert.True(user.IsBanned);
+            Assert.True(user.IsSuspended);
+            _userRepositoryMock.Verify(r => r.UpdateUserAsync(user), Times.Once);
+        }
+
+        [Fact]
+        public async Task ReactivateUserAsyncWhenDeletedShouldRestoreActiveStatus()
+        {
+            var userId = Guid.NewGuid();
+            var user = new User
+            {
+                Id = userId,
+                Role = Constants.Roles.Reviewer,
+                IsDeleted = true,
+                IsSuspended = true,
+                IsBanned = true,
+                Email = "user@spectrum.test"
+            };
+
+            _userRepositoryMock.Setup(r => r.GetUserByIdForModerationAsync(userId)).ReturnsAsync(user);
+            _userRepositoryMock.Setup(r => r.UpdateUserAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+            await _service.ReactivateUserAsync(userId, requesterId: null, CancellationToken.None);
+
+            Assert.False(user.IsDeleted);
+            Assert.False(user.IsSuspended);
+            Assert.False(user.IsBanned);
+            _userRepositoryMock.Verify(r => r.UpdateUserAsync(user), Times.Once);
+        }
+
+        [Fact]
         public async Task TestGetUsersForModerationAsyncShouldReturnMappedPagedResult()
         {
             var pagedUsers = new PagedResult<User>

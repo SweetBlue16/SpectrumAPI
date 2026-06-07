@@ -411,10 +411,45 @@ namespace Spectrum.API.Services.Drops
                 throw new SpectrumBusinessException("totalSlotsInvalid");
             }
 
-            if (!(startAt < joinDeadlineAt && joinDeadlineAt <= revealAt && revealAt < endAt))
+            var now = DateTime.UtcNow;
+            var normalizedStartAt = ToUtc(startAt);
+            var normalizedJoinDeadlineAt = ToUtc(joinDeadlineAt);
+            var normalizedRevealAt = ToUtc(revealAt);
+            var normalizedEndAt = ToUtc(endAt);
+
+            if (normalizedStartAt < now)
+            {
+                throw new SpectrumBusinessException("eventStartInPast");
+            }
+
+            if (normalizedJoinDeadlineAt < normalizedStartAt)
+            {
+                throw new SpectrumBusinessException("eventJoinDeadlineBeforeStart");
+            }
+
+            if (normalizedRevealAt < normalizedStartAt)
+            {
+                throw new SpectrumBusinessException("eventRevealBeforeStart");
+            }
+
+            if (normalizedEndAt < normalizedRevealAt)
+            {
+                throw new SpectrumBusinessException("eventEndBeforeReveal");
+            }
+
+            if (!(normalizedStartAt < normalizedJoinDeadlineAt &&
+                  normalizedJoinDeadlineAt <= normalizedRevealAt &&
+                  normalizedRevealAt < normalizedEndAt))
             {
                 throw new SpectrumBusinessException("eventDatesInvalid");
             }
+        }
+
+        private static DateTime ToUtc(DateTime value)
+        {
+            return value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+                : value.ToUniversalTime();
         }
 
         private static List<string> ValidateRewardCodes(IEnumerable<string> rewardCodes)

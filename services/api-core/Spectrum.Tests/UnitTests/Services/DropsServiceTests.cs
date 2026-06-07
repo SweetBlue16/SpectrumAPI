@@ -300,6 +300,29 @@ namespace Spectrum.Tests.UnitTests.Services
         }
 
         [Fact]
+        public async Task CreateEventAsyncWhenStartDateIsInPastShouldRejectEventWithSpecificMessage()
+        {
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = "Past",
+                GameTitle = "Halo",
+                Platform = "PC",
+                StartAt = now.AddMinutes(-5),
+                JoinDeadlineAt = now.AddHours(1),
+                RevealAt = now.AddHours(2),
+                EndAt = now.AddHours(3),
+                TotalSlots = 10,
+                AccessKeys = ["DHA3-SDFE-32EF-SF5R"]
+            };
+
+            var exception = await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+
+            Assert.Equal("eventStartInPast", exception.Message);
+        }
+
+        [Fact]
         public async Task CreateEventAsyncShouldPublishAutomaticallyAndNormalizeRewardCodes()
         {
             var adminId = Guid.NewGuid();

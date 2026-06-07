@@ -1,8 +1,9 @@
 package com.spectrum.social.service;
 
-import com.spectrum.social.grpc.GetUserVotesRequest;
-import com.spectrum.social.grpc.GetUserVotesResponse;
+import com.spectrum.social.grpc.*;
 import com.spectrum.social.model.Vote;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,9 +42,58 @@ class VoteGrpcServiceTest {
         assertEquals("review-2", observer.value.getVotes(1).getTargetId());
     }
 
+    @Test
+    void castVoteWhenApplicationServiceSucceedsShouldReturnUpdatedCounters() {
+        VoteApplicationService applicationService = mock(VoteApplicationService.class);
+        VoteGrpcService grpcService = new VoteGrpcService(applicationService);
+        when(applicationService.castVote("user-1", "review-1", "REVIEW", true))
+                .thenReturn(new VoteApplicationService.VoteCounts(8, 2));
+
+        CapturingObserver<VoteResponse> observer = new CapturingObserver<>();
+        grpcService.castVote(CastVoteRequest.newBuilder()
+                .setUserId("user-1")
+                .setTargetId("review-1")
+                .setTargetType("REVIEW")
+                .setIsPositive(true)
+                .build(), observer);
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getSuccess());
+        assertEquals(8, observer.value.getUpdatedLikes());
+        assertEquals(2, observer.value.getUpdatedDislikes());
+    }
+
+    @Test
+    void castVoteWhenTargetTypeIsUnsupportedShouldReturnInvalidArgument() {
+        VoteApplicationService applicationService = mock(VoteApplicationService.class);
+        VoteGrpcService grpcService = new VoteGrpcService(applicationService);
+
+        CapturingObserver<VoteResponse> observer = new CapturingObserver<>();
+        grpcService.castVote(CastVoteRequest.newBuilder()
+                .setUserId("user-1")
+                .setTargetId("clip-1")
+                .setTargetType("CLIP")
+                .build(), observer);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+    }
+
+    @Test
+    void getUserVotesWhenRequiredFieldsAreMissingShouldReturnInvalidArgument() {
+        VoteGrpcService grpcService = new VoteGrpcService(mock(VoteApplicationService.class));
+
+        CapturingObserver<GetUserVotesResponse> observer = new CapturingObserver<>();
+        grpcService.getUserVotes(GetUserVotesRequest.newBuilder()
+                .setTargetType("REVIEW")
+                .build(), observer);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+    }
+
     private static class CapturingObserver<T> implements StreamObserver<T> {
         private T value;
         private boolean completed;
+        private StatusRuntimeException error;
 
         @Override
         public void onNext(T value) {
@@ -51,7 +102,11 @@ class VoteGrpcServiceTest {
 
         @Override
         public void onError(Throwable throwable) {
-            throw new AssertionError(throwable);
+            if (throwable instanceof StatusRuntimeException statusRuntimeException) {
+                this.error = statusRuntimeException;
+                return;
+            }
+            fail(throwable);
         }
 
         @Override
