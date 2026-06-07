@@ -60,6 +60,14 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     private static final long PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS = 60 * 60 * 1000L;
     private static final Pattern REWARD_CODE_PATTERN = Pattern.compile("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$");
 
+    private static final String EVENT_NOT_FOUND_MSG = "Event not found.";
+    private static final String START_AT_FIELD = "startAt";
+    private static final String END_AT_FIELD = "endAt";
+    private static final String WINNERS_USER_ID_FIELD = "winners.userId";
+    private static final String WINNER_USER_ID_FIELD = "winnerUserId";
+    private static final String REWARD_DELIVERY_STATUS_FIELD = "rewardDeliveryStatus";
+    private static final String FINISHED_AT_FIELD = "finishedAt";
+
     private static final String STATUS_FIELD = "status";
     private static final String EVENT_ID_FIELD = "_id";
 
@@ -70,7 +78,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     @Override
     public void createEvent(CreateEventRequest request, StreamObserver<EventActionResponse> responseObserver) {
         try {
-            validateEventPayload(
+            EventCreationPayload eventPayload = new EventCreationPayload(
                     request.getTitle(),
                     request.getGameTitle(),
                     request.getPlatform(),
@@ -78,8 +86,8 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     request.getJoinDeadlineAt(),
                     request.getRevealAt(),
                     request.getEndAt(),
-                    request.getTotalSlots()
-            );
+                    request.getTotalSlots());
+            validateEventPayload(eventPayload);
             List<RewardCode> rewardCodes = buildRewardCodes(request.getAccessKeysList());
 
             long now = Instant.now().toEpochMilli();
@@ -127,7 +135,8 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
     public void updateEvent(UpdateEventRequest request, StreamObserver<EventActionResponse> responseObserver) {
         try {
             validateEventId(request.getEventId());
-            validateEventPayload(
+
+            EventCreationPayload eventPayload = new EventCreationPayload(
                     request.getTitle(),
                     request.getGameTitle(),
                     request.getPlatform(),
@@ -135,11 +144,11 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                     request.getJoinDeadlineAt(),
                     request.getRevealAt(),
                     request.getEndAt(),
-                    request.getTotalSlots()
-            );
+                    request.getTotalSlots());
+            validateEventPayload(eventPayload);
 
             Event event = eventRepository.findById(request.getEventId())
-                    .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+                    .orElseThrow(() -> new IllegalArgumentException(EVENT_NOT_FOUND_MSG));
 
             if (!canEditEvent(event, Instant.now().toEpochMilli())) {
                 throw new IllegalStateException("Este evento está por comenzar, y no puede ser editado");
@@ -192,7 +201,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         try {
             validateEventId(request.getEventId());
             Event event = eventRepository.findById(request.getEventId())
-                    .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+                    .orElseThrow(() -> new IllegalArgumentException(EVENT_NOT_FOUND_MSG));
 
             if (FINISHED.equals(event.getStatus()) || CANCELLED.equals(event.getStatus())) {
                 throw new IllegalStateException("Finished or cancelled events cannot be published.");
@@ -214,7 +223,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         try {
             validateEventId(request.getEventId());
             Event event = eventRepository.findById(request.getEventId())
-                    .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+                    .orElseThrow(() -> new IllegalArgumentException(EVENT_NOT_FOUND_MSG));
 
             if (FINISHED.equals(event.getStatus()) || EXHAUSTED.equals(event.getStatus()) || CANCELLED.equals(event.getStatus())) {
                 sendActionSuccess(responseObserver, event.getId(), "Event already closed.");
@@ -258,7 +267,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             long now = Instant.now().toEpochMilli();
             Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
                     .and(STATUS_FIELD).in(SCHEDULED, ACTIVE, UPCOMING, ACTIVE_JOIN, REGISTRATION_OPEN)
-                    .and("startAt").lte(now)
+                    .and(START_AT_FIELD).lte(now)
                     .and("joinDeadlineAt").gte(now)
                     .and("availableSlots").gt(0));
 
@@ -319,11 +328,11 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             Query query = new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
                     .and(STATUS_FIELD).nin(DRAFT, CANCELLED, EXPIRED)
                     .and("revealAt").lte(now)
-                    .and("endAt").gte(now)
+                    .and(END_AT_FIELD).gte(now)
                     .and("keysAvailable").gt(0)
                     .and("rewardCodes").elemMatch(Criteria.where("claimed").is(false))
                     .and("rewardCodes.claimedByUserId").ne(request.getUserId())
-                    .and("winners.userId").ne(request.getUserId()));
+                    .and(WINNERS_USER_ID_FIELD).ne(request.getUserId()));
 
             Update update = new Update()
                     .set("rewardCodes.$.claimed", true)
@@ -376,13 +385,13 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             boolean exhausted = updated.getKeysAvailable() <= 0;
             Update winnerUpdate = new Update()
                     .push("winners", winner)
-                    .set("winnerUserId", request.getUserId())
+                    .set(WINNER_USER_ID_FIELD, request.getUserId())
                     .set("winnerUsername", request.getUsername())
-                    .set("rewardDeliveryStatus", REWARD_PENDING);
+                    .set(REWARD_DELIVERY_STATUS_FIELD, REWARD_PENDING);
             if (exhausted) {
                 winnerUpdate
                         .set(STATUS_FIELD, EXHAUSTED)
-                        .set("finishedAt", now);
+                        .set(FINISHED_AT_FIELD, now);
             }
             mongoTemplate.updateFirst(
                     new Query(Criteria.where(EVENT_ID_FIELD).is(request.getEventId())),
@@ -423,7 +432,7 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         try {
             validateEventId(request.getEventId());
             Event event = eventRepository.findById(request.getEventId())
-                    .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+                    .orElseThrow(() -> new IllegalArgumentException(EVENT_NOT_FOUND_MSG));
 
             responseObserver.onNext(toResponse(event, request.getRequesterUserId()));
             responseObserver.onCompleted();
@@ -445,9 +454,9 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             Query query = new Query(buildScopeCriteria(request.getScope(), request.getIncludeDrafts()));
             long total = mongoTemplate.count(query, Event.class);
 
-            Sort sort = "UPCOMING".equalsIgnoreCase(request.getScope())
-                    ? Sort.by(Sort.Direction.ASC, "startAt")
-                    : Sort.by(Sort.Direction.DESC, "startAt");
+            Sort sort = UPCOMING.equalsIgnoreCase(request.getScope())
+                    ? Sort.by(Sort.Direction.ASC, START_AT_FIELD)
+                    : Sort.by(Sort.Direction.DESC, START_AT_FIELD);
 
             query.with(sort)
                     .skip((long) (page - 1) * pageSize)
@@ -484,14 +493,14 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             Criteria criteria = Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
                     .and(STATUS_FIELD).nin(DRAFT, CANCELLED)
                     .orOperator(
-                            Criteria.where("winnerUserId").ne(null),
+                            Criteria.where(WINNER_USER_ID_FIELD).ne(null),
                             Criteria.where("winners.0").exists(true)
                     );
             Update update = new Update()
                     .set("rewardSentAt", request.getRewardSentAt())
-                    .set("rewardDeliveryStatus", REWARD_SENT);
+                    .set(REWARD_DELIVERY_STATUS_FIELD, REWARD_SENT);
             if (!request.getWinnerUserId().isBlank()) {
-                criteria = criteria.and("winners.userId").is(request.getWinnerUserId());
+                criteria = criteria.and(WINNERS_USER_ID_FIELD).is(request.getWinnerUserId());
                 update
                         .set("winners.$.deliveryStatus", REWARD_SENT)
                         .filterArray(Criteria.where("rewardCode.claimedByUserId").is(request.getWinnerUserId()))
@@ -528,9 +537,9 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
             Criteria criteria = Criteria.where(EVENT_ID_FIELD).is(request.getEventId())
                     .and(STATUS_FIELD).nin(DRAFT, CANCELLED)
-                    .and("winners.userId").is(request.getWinnerUserId());
+                    .and(WINNERS_USER_ID_FIELD).is(request.getWinnerUserId());
             Update update = new Update()
-                    .set("rewardDeliveryStatus", REWARD_FAILED)
+                    .set(REWARD_DELIVERY_STATUS_FIELD, REWARD_FAILED)
                     .set("winners.$.deliveryStatus", REWARD_FAILED)
                     .filterArray(Criteria.where("rewardCode.claimedByUserId").is(request.getWinnerUserId()))
                     .set("rewardCodes.$[rewardCode].deliveryStatus", REWARD_FAILED);
@@ -565,9 +574,9 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
             }
 
             Query query = new Query(new Criteria().orOperator(
-                    Criteria.where("winnerUserId").is(request.getUserId()),
-                    Criteria.where("winners.userId").is(request.getUserId())
-            )).with(Sort.by(Sort.Direction.DESC, "finishedAt"));
+                    Criteria.where(WINNER_USER_ID_FIELD).is(request.getUserId()),
+                    Criteria.where(WINNERS_USER_ID_FIELD).is(request.getUserId())
+            )).with(Sort.by(Sort.Direction.DESC, FINISHED_AT_FIELD));
             List<Event> events = mongoTemplate.find(query, Event.class);
 
             WonKeysResponse.Builder response = WonKeysResponse.newBuilder();
@@ -612,17 +621,17 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
 
         Criteria scopeCriteria = switch (scope == null ? "" : scope.toUpperCase()) {
             case "CURRENT" -> new Criteria().andOperator(
-                    Criteria.where("startAt").lte(now),
+                    Criteria.where(START_AT_FIELD).lte(now),
                     new Criteria().orOperator(
-                            Criteria.where("endAt").gte(now),
-                            Criteria.where("finishedAt").gte(now - PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS)
+                            Criteria.where(END_AT_FIELD).gte(now),
+                            Criteria.where(FINISHED_AT_FIELD).gte(now - PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS)
                     ),
                     Criteria.where(STATUS_FIELD).nin(DRAFT, CANCELLED, EXPIRED)
             );
-            case "UPCOMING" -> Criteria.where("startAt").gt(now);
+            case UPCOMING -> Criteria.where(START_AT_FIELD).gt(now);
             case "PAST" -> new Criteria().orOperator(
                     Criteria.where(STATUS_FIELD).in(FINISHED, EXHAUSTED, CANCELLED, EXPIRED),
-                    Criteria.where("endAt").lt(now)
+                    Criteria.where(END_AT_FIELD).lt(now)
             );
             default -> null;
         };
@@ -773,38 +782,29 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
         return finishedAt + PUBLIC_VISIBILITY_AFTER_FINISH_MILLIS;
     }
 
-    private void validateEventPayload(
-            String title,
-            String gameTitle,
-            String platform,
-            long startAt,
-            long joinDeadlineAt,
-            long revealAt,
-            long endAt,
-            int totalSlots
-    ) {
-        if (title == null || title.isBlank()) {
+    private void validateEventPayload(EventCreationPayload event) {
+        if (event.title == null || event.title.isBlank()) {
             throw new IllegalArgumentException("Title is required.");
         }
-        if (title.length() > MAX_SHORT_TEXT_LENGTH) {
+        if (event.title.length() > MAX_SHORT_TEXT_LENGTH) {
             throw new IllegalArgumentException("Title is too long.");
         }
-        if (gameTitle == null || gameTitle.isBlank()) {
+        if (event.gameTitle == null || event.gameTitle.isBlank()) {
             throw new IllegalArgumentException("Game title is required.");
         }
-        if (gameTitle.length() > MAX_SHORT_TEXT_LENGTH) {
+        if (event.gameTitle.length() > MAX_SHORT_TEXT_LENGTH) {
             throw new IllegalArgumentException("Game title is too long.");
         }
-        if (platform == null || platform.isBlank()) {
+        if (event.platform == null || event.platform.isBlank()) {
             throw new IllegalArgumentException("Platform is required.");
         }
-        if (platform.length() > MAX_SHORT_TEXT_LENGTH) {
+        if (event.platform.length() > MAX_SHORT_TEXT_LENGTH) {
             throw new IllegalArgumentException("Platform is too long.");
         }
-        if (totalSlots <= 0) {
+        if (event.totalSlots <= 0) {
             throw new IllegalArgumentException("Total slots must be greater than zero.");
         }
-        if (!(startAt < joinDeadlineAt && joinDeadlineAt <= revealAt && revealAt < endAt)) {
+        if (!(event.startAt < event.joinDeadlineAt && event.joinDeadlineAt <= event.revealAt && event.revealAt < event.endAt)) {
             throw new IllegalArgumentException("Event dates are invalid.");
         }
     }
@@ -919,4 +919,8 @@ public class DropsGrpcService extends DropServiceGrpc.DropServiceImplBase {
                 .build());
         observer.onCompleted();
     }
+
+    private record EventCreationPayload(String title, String gameTitle, String platform,
+                                        long startAt, long joinDeadlineAt, long revealAt,
+                                        long endAt, int totalSlots) {}
 }

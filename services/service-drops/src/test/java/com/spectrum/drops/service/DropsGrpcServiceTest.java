@@ -65,7 +65,7 @@ class DropsGrpcServiceTest {
         winner.getRewardCodes().get(0).setClaimed(true);
         winner.getRewardCodes().get(0).setClaimedByUserId(userId);
         winner.getRewardCodes().get(0).setClaimedByUsername("spectrum");
-        winner.getRewardCodes().get(0).setClaimedAt(Instant.now().toEpochMilli());
+        winner.getRewardCodes().get(0).setClaimedAt(getNow());
         winner.setKeysAvailable(1);
         winner.setStatus("REVEAL_ACTIVE");
 
@@ -103,7 +103,7 @@ class DropsGrpcServiceTest {
             event.setWinners(List.of(Winner.builder()
                     .userId("winner")
                     .username("winner-name")
-                    .claimedAt(Instant.now().toEpochMilli())
+                    .claimedAt(getNow())
                     .build()));
             event.setStatus("EXHAUSTED");
             return Optional.of(event);
@@ -175,14 +175,14 @@ class DropsGrpcServiceTest {
         firstClaim.getRewardCodes().get(0).setClaimed(true);
         firstClaim.getRewardCodes().get(0).setClaimedByUserId("user-1");
         firstClaim.getRewardCodes().get(0).setClaimedByUsername("user-1");
-        firstClaim.getRewardCodes().get(0).setClaimedAt(Instant.now().toEpochMilli());
+        firstClaim.getRewardCodes().get(0).setClaimedAt(getNow());
         firstClaim.setKeysAvailable(1);
 
         Event secondClaim = activeEvent(eventId);
         secondClaim.getRewardCodes().get(1).setClaimed(true);
         secondClaim.getRewardCodes().get(1).setClaimedByUserId("user-2");
         secondClaim.getRewardCodes().get(1).setClaimedByUsername("user-2");
-        secondClaim.getRewardCodes().get(1).setClaimedAt(Instant.now().toEpochMilli());
+        secondClaim.getRewardCodes().get(1).setClaimedAt(getNow());
         secondClaim.setKeysAvailable(0);
 
         when(mongoTemplate.findAndModify(
@@ -229,7 +229,7 @@ class DropsGrpcServiceTest {
         event.setWinners(List.of(Winner.builder()
                 .userId(userId)
                 .username("already-winner")
-                .claimedAt(Instant.now().toEpochMilli())
+                .claimedAt(getNow())
                 .build()));
         when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
 
@@ -297,7 +297,7 @@ class DropsGrpcServiceTest {
                     RewardCode code = event.getRewardCodes().get(number - 1);
                     code.setClaimed(true);
                     code.setClaimedByUserId("winner-" + number);
-                    code.setClaimedAt(Instant.now().toEpochMilli());
+                    code.setClaimedAt(getNow());
                     event.setKeysAvailable(10 - number);
                     event.setStatus(number == 10 ? "EXHAUSTED" : "REVEAL_ACTIVE");
                     return event;
@@ -437,7 +437,7 @@ class DropsGrpcServiceTest {
 
     @Test
     void createEventWhenDatesAreInvalidShouldReturnError() {
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
 
         dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
@@ -458,7 +458,7 @@ class DropsGrpcServiceTest {
 
     @Test
     void createEventShouldAlwaysPublishAutomatically() {
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         AtomicReference<Event> saved = new AtomicReference<>();
         when(eventRepository.save(any(Event.class))).thenAnswer(invocation -> {
             Event event = invocation.getArgument(0);
@@ -487,7 +487,7 @@ class DropsGrpcServiceTest {
 
     @Test
     void createEventWhenRewardCodeFormatIsInvalidShouldReturnError() {
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
 
         dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
@@ -509,7 +509,7 @@ class DropsGrpcServiceTest {
 
     @Test
     void createEventWhenRewardCodesAreDuplicatedShouldReturnError() {
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
 
         dropsGrpcService.createEvent(CreateEventRequest.newBuilder()
@@ -533,7 +533,7 @@ class DropsGrpcServiceTest {
     @Test
     void updateEventWhenEditableShouldUpdateFieldsAndRecalculateRewardInventory() {
         String eventId = "event-update";
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         Event event = activeEvent(eventId);
         event.setStatus("UPCOMING");
         event.setStartAt(now + 30 * 60_000);
@@ -571,7 +571,7 @@ class DropsGrpcServiceTest {
     @Test
     void updateEventWhenTotalSlotsWouldBeBelowParticipantsShouldReturnError() {
         String eventId = "event-update-slots";
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         Event event = activeEvent(eventId);
         event.setStatus("UPCOMING");
         event.setStartAt(now + 30 * 60_000);
@@ -600,7 +600,7 @@ class DropsGrpcServiceTest {
     void publishEventWhenEventIsEditableShouldSetPublishedStatusAndSave() {
         String eventId = "event-publish";
         Event event = activeEvent(eventId);
-        event.setStartAt(Instant.now().toEpochMilli() + 60_000);
+        event.setStartAt(getNow() + 60_000);
         event.setStatus("DRAFT");
         when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
 
@@ -675,7 +675,7 @@ class DropsGrpcServiceTest {
     @Test
     void getEventStatusWhenEventHasNotStartedShouldReturnUpcomingAndNoJoinAction() {
         String eventId = "event-upcoming";
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         Event event = activeEvent(eventId);
         event.setStartAt(now + 60_000);
         event.setJoinDeadlineAt(now + 120_000);
@@ -700,7 +700,7 @@ class DropsGrpcServiceTest {
         String eventId = "event-claim-ready";
         String userId = "user-ready";
         Event event = activeEvent(eventId);
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         event.setJoinDeadlineAt(now - 5_000);
         event.setRevealAt(now - 1_000);
         event.setEndAt(now + 20_000);
@@ -727,7 +727,7 @@ class DropsGrpcServiceTest {
                 .userId("winner-1")
                 .username("winner")
                 .rewardCode("DHA3-SDFE-32EF-SF5R")
-                .claimedAt(Instant.now().toEpochMilli())
+                .claimedAt(getNow())
                 .deliveryStatus("SENT")
                 .build()));
         when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
@@ -753,7 +753,7 @@ class DropsGrpcServiceTest {
                 EventParticipant.builder()
                         .eventId("event-joined")
                         .userId(requesterId)
-                        .joinedAt(Instant.now().toEpochMilli())
+                        .joinedAt(getNow())
                         .build()
         ));
 
@@ -796,7 +796,7 @@ class DropsGrpcServiceTest {
         String eventId = "event-stale-finished";
         String userId = "user-ready";
         Event event = activeEvent(eventId);
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         event.setStatus("FINISHED");
         event.setJoinDeadlineAt(now - 5_000);
         event.setRevealAt(now - 1_000);
@@ -823,7 +823,7 @@ class DropsGrpcServiceTest {
                 .userId("winner-1")
                 .username("winner")
                 .rewardCode("KEY-1")
-                .claimedAt(Instant.now().toEpochMilli())
+                .claimedAt(getNow())
                 .deliveryStatus("SENT")
                 .build()));
         when(mongoTemplate.findAndModify(
@@ -837,7 +837,7 @@ class DropsGrpcServiceTest {
         dropsGrpcService.markRewardSent(MarkRewardSentRequest.newBuilder()
                 .setEventId(eventId)
                 .setWinnerUserId("winner-1")
-                .setRewardSentAt(Instant.now().toEpochMilli())
+                .setRewardSentAt(getNow())
                 .build(), observer);
 
         assertTrue(observer.value.getSuccess());
@@ -852,7 +852,7 @@ class DropsGrpcServiceTest {
                 .userId("winner-1")
                 .username("winner")
                 .rewardCode("KEY-1")
-                .claimedAt(Instant.now().toEpochMilli())
+                .claimedAt(getNow())
                 .deliveryStatus("FAILED")
                 .build()));
         when(mongoTemplate.findAndModify(
@@ -866,7 +866,7 @@ class DropsGrpcServiceTest {
         dropsGrpcService.markRewardDeliveryFailed(MarkRewardDeliveryFailedRequest.newBuilder()
                 .setEventId(eventId)
                 .setWinnerUserId("winner-1")
-                .setFailedAt(Instant.now().toEpochMilli())
+                .setFailedAt(getNow())
                 .build(), observer);
 
         assertTrue(observer.value.getSuccess());
@@ -874,7 +874,7 @@ class DropsGrpcServiceTest {
     }
 
     private static Event activeEvent(String eventId) {
-        long now = Instant.now().toEpochMilli();
+        long now = getNow();
         Event event = new Event();
         event.setId(eventId);
         event.setTitle("Launch Drop");
@@ -940,5 +940,10 @@ class DropsGrpcServiceTest {
         public void onCompleted() {
             completed = true;
         }
+    }
+
+    @SuppressWarnings("java:S3688")
+    private static long getNow() {
+        return System.currentTimeMillis();
     }
 }
