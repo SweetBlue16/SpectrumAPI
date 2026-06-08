@@ -11,7 +11,7 @@ namespace Spectrum.API.Services.Home
 {
     public interface IHomeDashboardService
     {
-        Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null, bool isAdmin = false);
+        Task<HomeDashboardDto> GetDashboardAsync(Guid? currentUserId = null, bool isAdmin = false, CancellationToken cancellationToken = default);
     }
 
     public class HomeDashboardService : IHomeDashboardService
@@ -37,7 +37,7 @@ namespace Spectrum.API.Services.Home
             _voteService = voteService;
         }
 
-        public async Task<HomeDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null, bool isAdmin = false)
+        public async Task<HomeDashboardDto> GetDashboardAsync(Guid? currentUserId = null, bool isAdmin = false, CancellationToken cancellationToken = default)
         {
             var today = DateTime.UtcNow.Date;
             var weekEnd = today.AddDays(7);

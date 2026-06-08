@@ -25,7 +25,7 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> SuspendUser(Guid userId, CancellationToken cancellationToken, [FromBody] AdminModerationActionDto? dto = null)
+        public async Task<IActionResult> SuspendUser(Guid userId, [FromBody] AdminModerationActionDto? dto = null, CancellationToken cancellationToken = default)
         {
             await _moderationService.ToggleSuspensionAsync(
                 userId,
@@ -76,8 +76,8 @@ namespace Spectrum.API.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null,
-            CancellationToken cancellationToken = default,
-            [FromQuery] string? status = null)
+            [FromQuery] string? status = null,
+            CancellationToken cancellationToken = default)
         {
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 50) pageSize = 10;

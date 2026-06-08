@@ -22,7 +22,7 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(typeof(WeeklyTrendsDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetWeekly(CancellationToken cancellationToken)
         {
-            var trends = await _analyticsService.GetWeeklyTrendsAsync(cancellationToken, GetCurrentUserIdOrDefault());
+            var trends = await _analyticsService.GetWeeklyTrendsAsync(GetCurrentUserIdOrDefault(), cancellationToken);
             return Ok(trends);
         }
 
@@ -30,7 +30,7 @@ namespace Spectrum.API.Controllers
         [ProducesResponseType(typeof(TrendsDashboardDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
         {
-            var trends = await _analyticsService.GetTrendsDashboardAsync(cancellationToken, GetCurrentUserIdOrDefault());
+            var trends = await _analyticsService.GetTrendsDashboardAsync(GetCurrentUserIdOrDefault(), cancellationToken);
             return Ok(trends);
         }
 

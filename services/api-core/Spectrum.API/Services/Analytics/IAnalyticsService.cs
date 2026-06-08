@@ -10,8 +10,8 @@ namespace Spectrum.API.Services.Analytics
     public interface IAnalyticsService
     {
         Task<GlobalMetricsDto> GetGlobalMetricsAsync(string period, DateTime? anchorDate, CancellationToken cancellationToken = default);
-        Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
-        Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null);
+        Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
+        Task<TrendsDashboardDto> GetTrendsDashboardAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
         Task<CryptDashboardDto> GetCryptDashboardAsync(CancellationToken cancellationToken = default);
         Task<PagedResult<WeeklyReviewDto>> GetWeeklyClipsAsync(int page, int pageSize, Guid? currentUserId = null, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<WeeklyReviewDto>> GetMonthlyTopClipsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
@@ -78,7 +78,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
-        public async Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
+        public async Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
             var window = ResolveWeeklyWindow(DateTime.UtcNow);
             var topGames = await _context.Reviews
@@ -148,7 +148,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
-        public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
+        public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
             var week = ResolveWeeklyWindow(DateTime.UtcNow);
             var month = ResolveWindow(PeriodMonth, DateTime.UtcNow);

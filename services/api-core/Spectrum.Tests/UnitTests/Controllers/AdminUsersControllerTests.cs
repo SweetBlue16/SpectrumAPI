@@ -26,7 +26,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
                 .Setup(s => s.ToggleSuspensionAsync(userId, true, null, null, It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
-            var result = await _controller.SuspendUser(userId, CancellationToken.None);
+            var result = await _controller.SuspendUser(userId, null, CancellationToken.None);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.NotNull(okResult.Value);
@@ -63,7 +63,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
                 .Setup(s => s.GetUsersForModerationAsync(1, 10, null, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(expectedPagedResult);
 
-            var result = await _controller.GetUsers(1, 10, null, CancellationToken.None);
+            var result = await _controller.GetUsers(1, 10, null, null, CancellationToken.None);
 
             var okResult = Assert.IsType<OkObjectResult>(result);
             var returnedResult = Assert.IsType<PagedResult<UserModerationDto>>(okResult.Value);

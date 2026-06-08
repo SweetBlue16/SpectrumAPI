@@ -24,9 +24,9 @@ namespace Spectrum.API.Controllers
         public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
         {
             return Ok(await _homeDashboardService.GetDashboardAsync(
-                cancellationToken,
                 GetCurrentUserIdOrDefault(),
-                HttpContext?.User?.IsInRole(Constants.Roles.Admin) == true
+                HttpContext?.User?.IsInRole(Constants.Roles.Admin) == true,
+                cancellationToken
             ));
         }
 

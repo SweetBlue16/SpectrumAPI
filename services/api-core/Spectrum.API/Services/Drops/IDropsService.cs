@@ -15,7 +15,7 @@ namespace Spectrum.API.Services.Drops
         Task<DropActionResultDto> JoinEventAsync(Guid userId, string eventId, CancellationToken cancellationToken);
         Task<ClaimDropResultDto> ClaimAccessKeyAsync(Guid userId, string eventId, ClaimDropDto dto, CancellationToken cancellationToken);
         Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
-        Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
+        Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, CancellationToken cancellationToken, Guid? currentUserId = null);
         Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken);
     }
 
@@ -46,7 +46,8 @@ namespace Spectrum.API.Services.Drops
 
         public async Task<DropActionResultDto> CreateEventAsync(CreateDropEventDto dto, Guid adminId, CancellationToken cancellationToken)
         {
-            ValidateEvent(dto.Title, dto.GameTitle, dto.Platform, dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt, dto.TotalSlots);
+            var dates = new DropEventDates(dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt);
+            ValidateEvent(dto.Title, dto.GameTitle, dto.Platform, dates, dto.TotalSlots);
             var rewardCodes = ValidateRewardCodes(dto.AccessKeys);
 
             var request = new CreateEventRequest
@@ -80,7 +81,8 @@ namespace Spectrum.API.Services.Drops
                 throw new SpectrumBusinessException(EditLockedMessage);
             }
 
-            ValidateEvent(dto.Title, dto.GameTitle, dto.Platform, dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt, dto.TotalSlots);
+            var dates = new DropEventDates(dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt);
+            ValidateEvent(dto.Title, dto.GameTitle, dto.Platform, dates, dto.TotalSlots);
             var rewardCodes = dto.AccessKeys.Count == 0 ? new List<string>() : ValidateRewardCodes(dto.AccessKeys);
 
             var request = new UpdateEventRequest
@@ -183,7 +185,7 @@ namespace Spectrum.API.Services.Drops
                     throw new SpectrumNotFoundException(Constants.ErrorMessages.ResourceNotFound);
                 }
 
-                return MapEvent(response, exposeChallengeCode);
+                return MapEvent(response);
             }
             catch (RpcException ex)
             {
@@ -197,7 +199,6 @@ namespace Spectrum.API.Services.Drops
             int page,
             int pageSize,
             bool includeDrafts,
-            bool exposeChallengeCode,
             CancellationToken cancellationToken,
             Guid? currentUserId = null
         )
@@ -218,7 +219,7 @@ namespace Spectrum.API.Services.Drops
 
                 return new PagedResult<EventStatusDto>
                 {
-                    Items = response.Events.Select(item => MapEvent(item, exposeChallengeCode)).ToList(),
+                    Items = response.Events.Select(item => MapEvent(item)).ToList(),
                     TotalCount = response.TotalCount,
                     Page = response.Page,
                     PageSize = response.PageSize
@@ -317,7 +318,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
-        private static EventStatusDto MapEvent(EventStatusResponse response, bool exposeChallengeCode)
+        private static EventStatusDto MapEvent(EventStatusResponse response)
         {
             var revealAt = FromUnixMilliseconds(response.RevealAt);
 
@@ -393,10 +394,7 @@ namespace Spectrum.API.Services.Drops
             string title,
             string gameTitle,
             string platform,
-            DateTime startAt,
-            DateTime joinDeadlineAt,
-            DateTime revealAt,
-            DateTime endAt,
+            DropEventDates dates,
             int totalSlots
         )
         {
@@ -413,10 +411,10 @@ namespace Spectrum.API.Services.Drops
             }
 
             var now = DateTime.UtcNow;
-            var normalizedStartAt = ToUtc(startAt);
-            var normalizedJoinDeadlineAt = ToUtc(joinDeadlineAt);
-            var normalizedRevealAt = ToUtc(revealAt);
-            var normalizedEndAt = ToUtc(endAt);
+            var normalizedStartAt = ToUtc(dates.StartAt);
+            var normalizedJoinDeadlineAt = ToUtc(dates.JoinDeadlineAt);
+            var normalizedRevealAt = ToUtc(dates.RevealAt);
+            var normalizedEndAt = ToUtc(dates.EndAt);
 
             if (normalizedStartAt < now)
             {
@@ -445,6 +443,8 @@ namespace Spectrum.API.Services.Drops
                 throw new SpectrumBusinessException("eventDatesInvalid");
             }
         }
+
+        private record DropEventDates(DateTime StartAt, DateTime JoinDeadlineAt, DateTime RevealAt, DateTime EndAt);
 
         private static DateTime ToUtc(DateTime value)
         {

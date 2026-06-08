@@ -41,7 +41,7 @@ namespace Spectrum.API.Services.External
             _logger = logger;
 
             _apiKey = configuration["RawgApi:ApiKey"]
-                ?? throw new ArgumentNullException("RAWG ApiKey not found in configuration.");
+                ?? throw new ArgumentNullException(nameof(configuration), "RAWG ApiKey not found in configuration.");
 
             _dataFilePath = Path.Combine(env.ContentRootPath, "Data", "games_snapshot.json");
         }

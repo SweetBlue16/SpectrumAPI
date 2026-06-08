@@ -69,18 +69,6 @@ namespace Spectrum.API.Services.Email
             );
         }
 
-        private Task SendLegacyGiveawayWinnerEmailAsync(string email, string eventTitle, string rewardCode)
-        {
-            return SendCustomAsync(
-                email,
-                $"Tu recompensa de Spectrum: {eventTitle}",
-                "Ganaste un sorteo en Spectrum",
-                $"Felicidades. Ganaste el sorteo {eventTitle}. Tienes 24 horas para canjear este código:",
-                rewardCode,
-                "No compartas este código. Si no reconoces este premio, contacta al soporte de Spectrum."
-            );
-        }
-
         public Task SendReviewDeletedAsync(string email, string reviewTitle)
         {
             return SendNoticeAsync(
