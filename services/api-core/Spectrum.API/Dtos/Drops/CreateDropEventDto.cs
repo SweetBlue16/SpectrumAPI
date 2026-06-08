@@ -29,7 +29,7 @@ namespace Spectrum.API.Dtos.Drops
         public required DateTime JoinDeadlineAt { get; set; }
         public required DateTime RevealAt { get; set; }
         public required DateTime EndAt { get; set; }
-        public int TotalSlots { get; set; }
+        public required int TotalSlots { get; set; }
 
         [MaxLength(InputValidationLimits.ShortText)]
         public string PublicChallengeCode { get; set; } = string.Empty;
