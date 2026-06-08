@@ -383,20 +383,16 @@ namespace Spectrum.API.Services.Seeding
 
         private static IEnumerable<BsonDocument> BuildVoteDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews)
         {
-            foreach (var review in reviews.Take(20))
-            {
-                for (var i = 0; i < Math.Min(6, users.Count); i++)
+            return reviews.Take(20).SelectMany(review =>
+                Enumerable.Range(0, Math.Min(6, users.Count)).Select(i => new BsonDocument
                 {
-                    yield return new BsonDocument
-                    {
-                        ["_id"] = $"{DemoPrefix.ToLowerInvariant()}vote-{review.Id}-{i}",
-                        [UserIdField] = users[i].Id.ToString(),
-                        ["targetId"] = review.Id.ToString(),
-                        ["targetType"] = "REVIEW",
-                        ["isPositive"] = i % 4 != 0
-                    };
-                }
-            }
+                    ["_id"] = $"{DemoPrefix.ToLowerInvariant()}vote-{review.Id}-{i}",
+                    [UserIdField] = users[i].Id.ToString(),
+                    ["targetId"] = review.Id.ToString(),
+                    ["targetType"] = "REVIEW",
+                    ["isPositive"] = i % 4 != 0
+                })
+            );
         }
 
         private static IEnumerable<BsonDocument> BuildReportDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews, IReadOnlyList<BsonDocument> comments, DateTime now)

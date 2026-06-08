@@ -24,7 +24,7 @@ namespace Spectrum.API.Services.Drops
         private const int MaximumRewardLength = InputValidationLimits.DropRewardCode;
         private const string EditLockedMessage = "Este evento está por comenzar, y no puede ser editado";
 
-        private static readonly Regex RewardCodeRegex = new("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$", RegexOptions.Compiled);
+        private static readonly Regex RewardCodeRegex = new("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(250));
 
         private readonly DropService.DropServiceClient _dropServiceClient;
         private readonly IUserRepository _userRepository;
