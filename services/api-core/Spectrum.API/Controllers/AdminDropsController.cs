@@ -33,7 +33,6 @@ namespace Spectrum.API.Controllers
                 page,
                 pageSize,
                 includeDrafts: true,
-                exposeChallengeCode: true,
                 cancellationToken
             );
             return Ok(events);

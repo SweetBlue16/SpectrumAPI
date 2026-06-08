@@ -34,7 +34,6 @@ namespace Spectrum.API.Controllers
                 page,
                 pageSize,
                 includeDrafts: false,
-                exposeChallengeCode: false,
                 cancellationToken,
                 currentUserId
             );

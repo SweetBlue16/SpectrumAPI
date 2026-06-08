@@ -45,7 +45,6 @@ namespace Spectrum.API.Services.Clips
     {
         private readonly IGameClipRepository _clipRepository;
         private readonly IUserRepository _userRepository;
-        private readonly IVideoStorageService _videoStorageService;
         private readonly IGameRepository _gameRepository;
         private readonly IEmailService? _emailService;
         private readonly ILogger<GameClipService>? _logger;
@@ -55,21 +54,18 @@ namespace Spectrum.API.Services.Clips
         /// </summary>
         /// <param name="clipRepository">The repository abstracted for data access operations related to game clips.</param>
         /// <param name="userRepository">The repository abstracted for user records and authorization lookups.</param>
-        /// <param name="videoStorageService">The core service handling file lifecycles in cloud object storage.</param>
         /// <param name="gameRepository">The central memory repository acting as the snapshot catalog cache.</param>
         /// <param name="emailService">Optional transactional email service used for moderation notices.</param>
         /// <param name="logger">Optional structured logger used when non-blocking notifications fail.</param>
         public GameClipService(
             IGameClipRepository clipRepository,
             IUserRepository userRepository,
-            IVideoStorageService videoStorageService,
             IGameRepository gameRepository,
             IEmailService? emailService = null,
             ILogger<GameClipService>? logger = null)
         {
             _clipRepository = clipRepository;
             _userRepository = userRepository;
-            _videoStorageService = videoStorageService;
             _gameRepository = gameRepository;
             _emailService = emailService;
             _logger = logger;

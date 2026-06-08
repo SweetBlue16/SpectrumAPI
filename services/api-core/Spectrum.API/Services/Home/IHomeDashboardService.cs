@@ -87,7 +87,6 @@ namespace Spectrum.API.Services.Home
                 page: 1,
                 pageSize: 8,
                 includeDrafts: false,
-                exposeChallengeCode: false,
                 cancellationToken,
                 currentUserId
             );
@@ -97,7 +96,6 @@ namespace Spectrum.API.Services.Home
                 page: 1,
                 pageSize: 8,
                 includeDrafts: false,
-                exposeChallengeCode: false,
                 cancellationToken,
                 currentUserId
             );
