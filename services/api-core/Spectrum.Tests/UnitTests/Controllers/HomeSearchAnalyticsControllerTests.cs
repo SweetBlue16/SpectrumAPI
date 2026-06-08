@@ -18,7 +18,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
         {
             var serviceMock = new Mock<IHomeDashboardService>();
             serviceMock
-                .Setup(service => service.GetDashboardAsync(It.IsAny<CancellationToken>(), It.IsAny<Guid?>(), It.IsAny<bool>()))
+                .Setup(service => service.GetDashboardAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new HomeDashboardDto
                 {
                     BannerTitle = "SPECTRUM",
@@ -64,7 +64,7 @@ namespace Spectrum.Tests.UnitTests.Controllers
         {
             var serviceMock = new Mock<IAnalyticsService>();
             serviceMock
-                .Setup(service => service.GetTrendsDashboardAsync(It.IsAny<CancellationToken>(), It.IsAny<Guid?>()))
+                .Setup(service => service.GetTrendsDashboardAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new TrendsDashboardDto
                 {
                     WeeklyInteractions = [new NamedMetricDto { Id = "1", Label = "Game", Count = 3 }],

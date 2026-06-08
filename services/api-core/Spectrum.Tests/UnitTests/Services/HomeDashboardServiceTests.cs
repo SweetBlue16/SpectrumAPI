@@ -42,10 +42,10 @@ namespace Spectrum.Tests.UnitTests.Services
             var visibleDrop = CreateDrop("drop-visible", today.AddDays(1), today.AddDays(2));
             var oldDrop = CreateDrop("drop-old", today.AddDays(-10), today.AddDays(-9));
             dropsService
-                .Setup(service => service.ListEventsAsync("CURRENT", 1, 8, false, false, It.IsAny<CancellationToken>(), currentUserId))
+                .Setup(service => service.ListEventsAsync("CURRENT", 1, 8, false, It.IsAny<CancellationToken>(), currentUserId))
                 .ReturnsAsync(new PagedResult<EventStatusDto> { Items = new[] { oldDrop }, TotalCount = 1, Page = 1, PageSize = 8 });
             dropsService
-                .Setup(service => service.ListEventsAsync("UPCOMING", 1, 8, false, false, It.IsAny<CancellationToken>(), currentUserId))
+                .Setup(service => service.ListEventsAsync("UPCOMING", 1, 8, false, It.IsAny<CancellationToken>(), currentUserId))
                 .ReturnsAsync(new PagedResult<EventStatusDto> { Items = new[] { visibleDrop }, TotalCount = 1, Page = 1, PageSize = 8 });
 
             var analytics = new Mock<ICommentAnalyticsService>();
@@ -80,7 +80,7 @@ namespace Spectrum.Tests.UnitTests.Services
                 voteService.Object
             );
 
-            var dashboard = await service.GetDashboardAsync(CancellationToken.None, currentUserId);
+            var dashboard = await service.GetDashboardAsync(currentUserId, false, CancellationToken.None);
 
 
             Assert.Equal(ExpectedGameOrder, dashboard.RecentGames.Select(game => game.GameId));
@@ -110,7 +110,7 @@ namespace Spectrum.Tests.UnitTests.Services
 
             var dropsService = new Mock<IDropsService>();
             dropsService
-                .Setup(service => service.ListEventsAsync(It.IsAny<string>(), 1, 8, false, false, It.IsAny<CancellationToken>(), adminId))
+                .Setup(service => service.ListEventsAsync(It.IsAny<string>(), 1, 8, false, It.IsAny<CancellationToken>(), adminId))
                 .ReturnsAsync(new PagedResult<EventStatusDto> { Items = Array.Empty<EventStatusDto>(), Page = 1, PageSize = 8 });
 
             var analytics = new Mock<ICommentAnalyticsService>();
@@ -137,7 +137,7 @@ namespace Spectrum.Tests.UnitTests.Services
                 voteService.Object
             );
 
-            var dashboard = await service.GetDashboardAsync(CancellationToken.None, adminId, isAdmin: true);
+            var dashboard = await service.GetDashboardAsync(adminId, isAdmin: true, CancellationToken.None);
 
             var card = Assert.Single(dashboard.PopularReviewsToday);
             Assert.False(card.IsOwnReview);
