@@ -23,6 +23,9 @@ namespace Spectrum.API.Services.Seeding
     {
         private const string DemoPrefix = "DEMO_";
         private const string DemoDomain = "@demo.spectrum.local";
+        private const string StatusPending = "PENDING";
+        private const string UserIdField = "userId";
+
         private readonly SpectrumDbContext _context;
         private readonly IGameRepository _gameRepository;
         private readonly DemoSeedOptions _options;
@@ -231,7 +234,7 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<Review> BuildReviews(IReadOnlyList<User> users, IReadOnlyList<Game> games, DateTime now)
+        private static IEnumerable<Review> BuildReviews(IReadOnlyList<User> users, IReadOnlyList<Game> games, DateTime now)
         {
             for (var index = 0; index < 25; index++)
             {
@@ -265,7 +268,7 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<GameClip> BuildClips(IReadOnlyList<User> users, IReadOnlyList<Game> games, DateTime now)
+        private static IEnumerable<GameClip> BuildClips(IReadOnlyList<User> users, IReadOnlyList<Game> games, DateTime now)
         {
             for (var index = 0; index < 12; index++)
             {
@@ -325,12 +328,12 @@ namespace Spectrum.API.Services.Seeding
                 .ToListAsync(cancellationToken);
 
             var commentDelete = await comments.DeleteManyAsync(
-                Builders<BsonDocument>.Filter.In("userId", userIds) |
+                Builders<BsonDocument>.Filter.In(UserIdField, userIds) |
                 Builders<BsonDocument>.Filter.Regex("content", new BsonRegularExpression($"^{DemoPrefix}")),
                 cancellationToken
             );
             var voteDelete = await votes.DeleteManyAsync(
-                Builders<BsonDocument>.Filter.In("userId", userIds) |
+                Builders<BsonDocument>.Filter.In(UserIdField, userIds) |
                 Builders<BsonDocument>.Filter.Regex("_id", new BsonRegularExpression($"^{DemoPrefix.ToLowerInvariant()}vote-")),
                 cancellationToken
             );
@@ -341,7 +344,7 @@ namespace Spectrum.API.Services.Seeding
             );
             var participantDelete = await participants.DeleteManyAsync(
                 Builders<BsonDocument>.Filter.In("eventId", eventIds) |
-                Builders<BsonDocument>.Filter.In("userId", userIds),
+                Builders<BsonDocument>.Filter.In(UserIdField, userIds),
                 cancellationToken
             );
             var eventDelete = await events.DeleteManyAsync(Builders<BsonDocument>.Filter.Regex("title", new BsonRegularExpression($"^{DemoPrefix}")), cancellationToken);
@@ -356,7 +359,7 @@ namespace Spectrum.API.Services.Seeding
             };
         }
 
-        private IEnumerable<BsonDocument> BuildCommentDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews, DateTime now)
+        private static IEnumerable<BsonDocument> BuildCommentDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews, DateTime now)
         {
             var commentIndex = 0;
             foreach (var review in reviews.Take(16))
@@ -367,7 +370,7 @@ namespace Spectrum.API.Services.Seeding
                     yield return new BsonDocument
                     {
                         ["_id"] = $"{DemoPrefix.ToLowerInvariant()}comment-{review.Id}-{i}",
-                        ["userId"] = users[(commentIndex + i) % users.Count].Id.ToString(),
+                        [UserIdField] = users[(commentIndex + i) % users.Count].Id.ToString(),
                         ["reviewId"] = review.Id.ToString(),
                         ["gameId"] = review.GameId.ToString(),
                         ["content"] = $"{DemoPrefix} Comentario {commentIndex:00}-{i:00} con una respuesta de comunidad realista.",
@@ -378,7 +381,7 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<BsonDocument> BuildVoteDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews)
+        private static IEnumerable<BsonDocument> BuildVoteDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews)
         {
             foreach (var review in reviews.Take(20))
             {
@@ -387,7 +390,7 @@ namespace Spectrum.API.Services.Seeding
                     yield return new BsonDocument
                     {
                         ["_id"] = $"{DemoPrefix.ToLowerInvariant()}vote-{review.Id}-{i}",
-                        ["userId"] = users[i].Id.ToString(),
+                        [UserIdField] = users[i].Id.ToString(),
                         ["targetId"] = review.Id.ToString(),
                         ["targetType"] = "REVIEW",
                         ["isPositive"] = i % 4 != 0
@@ -396,7 +399,7 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<BsonDocument> BuildReportDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews, IReadOnlyList<BsonDocument> comments, DateTime now)
+        private static IEnumerable<BsonDocument> BuildReportDocuments(IReadOnlyList<User> users, IReadOnlyList<Review> reviews, IReadOnlyList<BsonDocument> comments, DateTime now)
         {
             var reasons = new[] { "ACOSO", "SPAM", "CONTENIDO_INAPROPIADO" };
             for (var index = 0; index < 9; index++)
@@ -417,7 +420,7 @@ namespace Spectrum.API.Services.Seeding
                     ["targetType"] = targetType,
                     ["reason"] = reasons[index % reasons.Length],
                     ["description"] = $"{DemoPrefix} Reporte de desarrollo #{index}.",
-                    ["status"] = resolved ? "RESOLVED" : "PENDING",
+                    ["status"] = resolved ? "RESOLVED" : StatusPending,
                     ["reportedAt"] = now.AddDays(-index),
                     ["moderatorId"] = resolved ? users[0].Id.ToString() : "",
                     ["resolutionNotes"] = resolved ? $"{DemoPrefix} Accion aplicada por demo seed." : "",
@@ -426,15 +429,15 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<BsonDocument> BuildDropEventDocuments(IReadOnlyList<User> users, DateTime now)
+        private static IEnumerable<BsonDocument> BuildDropEventDocuments(IReadOnlyList<User> users, DateTime now)
         {
             var definitions = new[]
             {
-                new { Key = "active-1", Status = "ACTIVE_JOIN", Offset = -1, Winner = "", Reward = "PENDING" },
-                new { Key = "active-2", Status = "ACTIVE_JOIN", Offset = 0, Winner = "", Reward = "PENDING" },
-                new { Key = "upcoming-1", Status = "UPCOMING", Offset = 2, Winner = "", Reward = "PENDING" },
-                new { Key = "upcoming-2", Status = "UPCOMING", Offset = 4, Winner = "", Reward = "PENDING" },
-                new { Key = "past-winner-pending", Status = "FINISHED", Offset = -10, Winner = users[2].Id.ToString(), Reward = "PENDING" },
+                new { Key = "active-1", Status = "ACTIVE_JOIN", Offset = -1, Winner = "", Reward = StatusPending },
+                new { Key = "active-2", Status = "ACTIVE_JOIN", Offset = 0, Winner = "", Reward = StatusPending },
+                new { Key = "upcoming-1", Status = "UPCOMING", Offset = 2, Winner = "", Reward = StatusPending },
+                new { Key = "upcoming-2", Status = "UPCOMING", Offset = 4, Winner = "", Reward = StatusPending },
+                new { Key = "past-winner-pending", Status = "FINISHED", Offset = -10, Winner = users[2].Id.ToString(), Reward = StatusPending },
                 new { Key = "past-winner-sent", Status = "EXHAUSTED", Offset = -14, Winner = users[3].Id.ToString(), Reward = "SENT" }
             };
 
@@ -452,7 +455,7 @@ namespace Spectrum.API.Services.Seeding
                         ["claimedByUserId"] = claimed ? item.Winner : "",
                         ["claimedByUsername"] = claimed ? winnerUser?.Username ?? "" : "",
                         ["claimedAt"] = claimed ? new BsonInt64(ToUnixMilliseconds(start.AddHours(4))) : BsonNull.Value,
-                        ["deliveryStatus"] = claimed ? item.Reward : "PENDING"
+                        ["deliveryStatus"] = claimed ? item.Reward : StatusPending
                     };
                 }));
                 var winners = item.Winner == ""
@@ -461,7 +464,7 @@ namespace Spectrum.API.Services.Seeding
                     {
                         new BsonDocument
                         {
-                            ["userId"] = item.Winner,
+                            [UserIdField] = item.Winner,
                             ["username"] = winnerUser?.Username ?? "",
                             ["rewardCode"] = $"{DemoPrefix}REWARD-{item.Key}-1",
                             ["claimedAt"] = new BsonInt64(ToUnixMilliseconds(start.AddHours(4))),
@@ -474,9 +477,9 @@ namespace Spectrum.API.Services.Seeding
                     ["title"] = $"{DemoPrefix} Sorteo {item.Key}",
                     ["description"] = "DEMO_ Sorteo de llaves para visualizar el flujo completo.",
                     ["imageUrl"] = $"https://placehold.co/800x450/2563eb/ffffff?text={item.Key}",
-                    ["gameTitle"] = item.Key.Contains("2") ? "Red Dead Redemption 2" : "Elden Ring",
-                    ["rawgGameId"] = item.Key.Contains("2") ? 28 : 326243,
-                    ["platform"] = item.Key.Contains("2") ? "Xbox" : "PC",
+                    ["gameTitle"] = item.Key.Contains('2') ? "Red Dead Redemption 2" : "Elden Ring",
+                    ["rawgGameId"] = item.Key.Contains('2') ? 28 : 326243,
+                    ["platform"] = item.Key.Contains('2') ? "Xbox" : "PC",
                     ["keysTotal"] = 3,
                     ["keysAvailable"] = item.Winner == "" ? 3 : 2,
                     ["totalSlots"] = 100,
@@ -500,7 +503,7 @@ namespace Spectrum.API.Services.Seeding
             }
         }
 
-        private IEnumerable<BsonDocument> BuildParticipantDocuments(IReadOnlyList<User> users, IReadOnlyList<BsonDocument> events, DateTime now)
+        private static IEnumerable<BsonDocument> BuildParticipantDocuments(IReadOnlyList<User> users, IReadOnlyList<BsonDocument> events, DateTime now)
         {
             foreach (var eventDocument in events)
             {
@@ -509,7 +512,7 @@ namespace Spectrum.API.Services.Seeding
                     yield return new BsonDocument
                     {
                         ["eventId"] = eventDocument["_id"].AsString,
-                        ["userId"] = user.Id.ToString(),
+                        [UserIdField] = user.Id.ToString(),
                         ["joinedAt"] = ToUnixMilliseconds(now.AddDays(-1))
                     };
                 }

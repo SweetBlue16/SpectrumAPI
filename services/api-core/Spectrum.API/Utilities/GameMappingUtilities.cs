@@ -2,6 +2,7 @@
 {
     using Spectrum.API.Dtos.External;
     using Spectrum.API.Models;
+    using System.Globalization;
 
     /// <summary>
     /// Provides helper methods to transform external data structures into internal models.
@@ -22,7 +23,7 @@
                 Title = externalGame.Name,
                 ReleaseDate = string.IsNullOrEmpty(externalGame.Released)
                     ? null
-                    : DateTime.Parse(externalGame.Released),
+                    : DateTime.Parse(externalGame.Released, CultureInfo.InvariantCulture),
                 CoverImageUrl = externalGame.BackgroundImage,
                 InternalRating = 0.0,
                 GenreIds = externalGame.Genres?.Select(g => g.Id).ToList() ?? new List<int>(),

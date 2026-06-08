@@ -17,14 +17,22 @@ namespace Spectrum.API.Utilities
         public const int MaximumVideoSizeMb = 60;
         public const int MaximumVideoDurationSeconds = 16;
 
+        private const string VideoType = "video";
+        private const string ImageType = "image";
+
+        private static readonly string[] AllowedImageContentTypes = { "image/jpeg", "image/png" };
+        private static readonly string[] AllowedVideoContentTypes = { "video/mp4", "video/quicktime" };
+        private static readonly string[] AllowedImageExtensions = { ".jpg", ".jpeg", ".png" };
+        private static readonly string[] AllowedVideoExtensions = { ".mp4", ".mov" };
+
         /// <summary>
         /// Orchestrates the validation for image files.
         /// </summary>
         public static void ValidateImage(IFormFile file, int maxSizeMb)
         {
-            ValidateFileSize(file, maxSizeMb, "image");
-            ValidateContentType(file, new[] { "image/jpeg", "image/png" }, "image");
-            ValidateFileExtension(file, new[] { ".jpg", ".jpeg", ".png" }, "image");
+            ValidateFileSize(file, maxSizeMb, ImageType);
+            ValidateContentType(file, AllowedImageContentTypes, ImageType);
+            ValidateFileExtension(file, AllowedImageExtensions, ImageType);
         }
 
         /// <summary>
@@ -32,9 +40,9 @@ namespace Spectrum.API.Utilities
         /// </summary>
         public static void ValidateVideo(IFormFile file, int maxSizeMb, int maxDurationSeconds)
         {
-            ValidateFileSize(file, maxSizeMb, "video");
-            ValidateContentType(file, new[] { "video/mp4", "video/quicktime" }, "video");
-            ValidateFileExtension(file, new[] { ".mp4", ".mov" }, "video");
+            ValidateFileSize(file, maxSizeMb, VideoType);
+            ValidateContentType(file, AllowedVideoContentTypes, VideoType);
+            ValidateFileExtension(file, AllowedVideoExtensions, VideoType);
             ValidateVideoDuration(file, maxDurationSeconds);
         }
 
@@ -48,9 +56,9 @@ namespace Spectrum.API.Utilities
 
             if (file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
             {
-                ValidateFileSize(file, MaximumVideoSizeMb, "video");
-                ValidateContentType(file, new[] { "video/mp4", "video/quicktime" }, "video");
-                ValidateFileExtension(file, new[] { ".mp4", ".mov" }, "video");
+                ValidateFileSize(file, MaximumVideoSizeMb, VideoType);
+                ValidateContentType(file, AllowedVideoContentTypes, VideoType);
+                ValidateFileExtension(file, AllowedVideoExtensions, VideoType);
                 return;
             }
 

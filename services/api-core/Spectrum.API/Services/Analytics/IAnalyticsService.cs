@@ -21,6 +21,7 @@ namespace Spectrum.API.Services.Analytics
     {
         private const int TopGamesLimit = 3;
         private const int ReviewsPerTrendGame = 3;
+        private const string PeriodMonth = "month";
 
         private readonly SpectrumDbContext _context;
         private readonly IGameRepository _gameRepository;
@@ -150,7 +151,7 @@ namespace Spectrum.API.Services.Analytics
         public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(CancellationToken cancellationToken = default, Guid? currentUserId = null)
         {
             var week = ResolveWeeklyWindow(DateTime.UtcNow);
-            var month = ResolveWindow("month", DateTime.UtcNow);
+            var month = ResolveWindow(PeriodMonth, DateTime.UtcNow);
 
             var weeklyReviews = await _context.Reviews
                 .AsNoTracking()
@@ -251,7 +252,7 @@ namespace Spectrum.API.Services.Analytics
 
         public async Task<CryptDashboardDto> GetCryptDashboardAsync(CancellationToken cancellationToken = default)
         {
-            var month = ResolveWindow("month", DateTime.UtcNow);
+            var month = ResolveWindow(PeriodMonth, DateTime.UtcNow);
             var monthlyReviews = await _context.Reviews
                 .AsNoTracking()
                 .Where(review => review.CreatedAt >= month.Start && review.CreatedAt < month.End)
@@ -354,7 +355,7 @@ namespace Spectrum.API.Services.Analytics
 
         public async Task<IReadOnlyList<WeeklyReviewDto>> GetMonthlyTopClipsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
-            var window = ResolveWindow("month", DateTime.UtcNow);
+            var window = ResolveWindow(PeriodMonth, DateTime.UtcNow);
             var reviews = await _context.Reviews
                 .AsNoTracking()
                 .Include(review => review.User)

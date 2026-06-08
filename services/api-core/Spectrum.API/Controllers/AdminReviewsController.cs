@@ -78,8 +78,8 @@ namespace Spectrum.API.Controllers
             {
                 var normalizedSearch = search.Trim().ToLower();
                 query = query.Where(review =>
-                    review.Title.ToLower().Contains(normalizedSearch) ||
-                    review.User != null && review.User.Username.ToLower().Contains(normalizedSearch));
+                    review.Title.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ||
+                    review.User != null && review.User.Username.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase));
             }
 
             query = sort.ToLowerInvariant() switch

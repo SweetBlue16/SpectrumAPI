@@ -29,6 +29,8 @@ namespace Spectrum.API.Services.External
         private readonly string _dataFilePath;
         private readonly ILogger<RawgSyncService> _logger;
 
+        private static readonly JsonSerializerOptions _intendedJsonOptions = new() { WriteIndented = true };
+
         public RawgSyncService(
             HttpClient httpClient,
             IConfiguration configuration,
@@ -122,8 +124,7 @@ namespace Spectrum.API.Services.External
                 Directory.CreateDirectory(directory);
             }
 
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            var json = JsonSerializer.Serialize(games, jsonOptions);
+            var json = JsonSerializer.Serialize(games, _intendedJsonOptions);
 
             await File.WriteAllTextAsync(_dataFilePath, json);
             _logger.LogInformation("Catalog snapshot successfully saved to {Path}", _dataFilePath);

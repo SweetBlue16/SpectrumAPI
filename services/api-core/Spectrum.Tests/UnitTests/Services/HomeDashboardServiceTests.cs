@@ -13,6 +13,8 @@ namespace Spectrum.Tests.UnitTests.Services
 {
     public class HomeDashboardServiceTests
     {
+        private static readonly int[] ExpectedGameOrder = { 20, 10 };
+
         [Fact]
         public async Task GetDashboardAsyncShouldComposeRecentGamesReviewsVotesAndWeeklyDrops()
         {
@@ -80,7 +82,8 @@ namespace Spectrum.Tests.UnitTests.Services
 
             var dashboard = await service.GetDashboardAsync(CancellationToken.None, currentUserId);
 
-            Assert.Equal(new[] { 20, 10 }, dashboard.RecentGames.Select(game => game.GameId));
+
+            Assert.Equal(ExpectedGameOrder, dashboard.RecentGames.Select(game => game.GameId));
             Assert.Equal(commentedReview.Id, dashboard.PopularReviewsToday[0].ReviewId);
             Assert.Equal(5, dashboard.PopularReviewsToday[0].CommentsCount);
             Assert.Equal("like", dashboard.PopularReviewsToday[0].CurrentUserVote);

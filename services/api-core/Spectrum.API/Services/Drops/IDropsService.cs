@@ -19,10 +19,11 @@ namespace Spectrum.API.Services.Drops
         Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken);
     }
 
-    public class DropsService : IDropsService
+    public partial class DropsService : IDropsService
     {
         private const int MaximumRewardLength = InputValidationLimits.DropRewardCode;
         private const string EditLockedMessage = "Este evento está por comenzar, y no puede ser editado";
+
         private static readonly Regex RewardCodeRegex = new("^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$", RegexOptions.Compiled);
 
         private readonly DropService.DropServiceClient _dropServiceClient;
