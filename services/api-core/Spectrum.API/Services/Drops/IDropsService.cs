@@ -444,7 +444,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
-        private record DropEventDates(DateTime StartAt, DateTime JoinDeadlineAt, DateTime RevealAt, DateTime EndAt);
+        private sealed record DropEventDates(DateTime StartAt, DateTime JoinDeadlineAt, DateTime RevealAt, DateTime EndAt);
 
         private static DateTime ToUtc(DateTime value)
         {

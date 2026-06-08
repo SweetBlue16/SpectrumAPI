@@ -304,7 +304,7 @@ namespace Spectrum.API.Services.Analytics
                 .Where(review => review.CreatedAt >= window.Start &&
                                  review.CreatedAt < window.End &&
                                  review.MediaType != null &&
-                                 review.MediaType.ToLower() == "video" &&
+                                 review.MediaType.Equals("video", StringComparison.OrdinalIgnoreCase) &&
                                  review.ImageUrl != null &&
                                  review.ImageUrl != string.Empty);
 
@@ -362,7 +362,7 @@ namespace Spectrum.API.Services.Analytics
                 .Where(review => review.CreatedAt >= window.Start &&
                                  review.CreatedAt < window.End &&
                                  review.MediaType != null &&
-                                 review.MediaType.ToLower() == "video" &&
+                                 review.MediaType.Equals("video", StringComparison.OrdinalIgnoreCase) &&
                                  review.ImageUrl != null &&
                                  review.ImageUrl != string.Empty)
                 .OrderByDescending(review => review.LikesCount)

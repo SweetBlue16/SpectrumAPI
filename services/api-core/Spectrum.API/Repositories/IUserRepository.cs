@@ -222,8 +222,8 @@ namespace Spectrum.API.Repositories
             {
                 var normalizedSearch = searchTerm.Trim().ToLower();
                 query = query.Where(u =>
-                    u.Username.ToLower().Contains(normalizedSearch) ||
-                    u.Email.ToLower().Contains(normalizedSearch));
+                    u.Username.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ||
+                    u.Email.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase));
             }
 
             query = NormalizeModerationStatus(status) switch
@@ -327,7 +327,7 @@ namespace Spectrum.API.Repositories
             var existingPlatformIds = user.Platforms.Select(p => p.Id).ToHashSet();
             var platformsToAddIds = incomingPlatformIds.Except(existingPlatformIds).ToList();
 
-            if (platformsToAddIds.Any())
+            if (platformsToAddIds.Count > 0)
             {
                 var platformsToAdd = await _context.Platforms
                     .Where(p => platformsToAddIds.Contains(p.Id))

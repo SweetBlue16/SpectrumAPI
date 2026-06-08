@@ -49,8 +49,8 @@ namespace Spectrum.API.Services.Search
             var lowered = normalized.ToLowerInvariant();
             var users = await _context.Users
                 .AsNoTracking()
-                .Where(user => user.Username.ToLower().Contains(lowered) ||
-                               user.Email.ToLower().Contains(lowered))
+                .Where(user => user.Username.Contains(lowered, StringComparison.OrdinalIgnoreCase) ||
+                               user.Email.Contains(lowered, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(user => user.Username)
                 .Take(ResultLimit)
                 .Select(user => new GlobalSearchItemDto

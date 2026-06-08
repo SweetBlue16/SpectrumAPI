@@ -161,7 +161,7 @@ namespace Spectrum.API.Services.Profile
                 .AsNoTracking()
                 .AnyAsync(existingUser =>
                     existingUser.Id != userId &&
-                    existingUser.Username.ToLower() == normalizedUsername.ToLower());
+                    existingUser.Username.Equals(normalizedUsername, StringComparison.OrdinalIgnoreCase));
 
             if (usernameExists)
             {

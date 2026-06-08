@@ -232,7 +232,7 @@ namespace Spectrum.API.Services.Profile
                    await _userRepository.GetUserByIdAsync(userId);
         }
 
-        private async Task<PagedResult<UserModerationDto>> MapUsersForModerationAsync(Task<PagedResult<User>> pagedUsersTask)
+        private static async Task<PagedResult<UserModerationDto>> MapUsersForModerationAsync(Task<PagedResult<User>> pagedUsersTask)
         {
             var pagedUsers = await pagedUsersTask;
             var dtos = pagedUsers.Items.Select(user => new UserModerationDto
