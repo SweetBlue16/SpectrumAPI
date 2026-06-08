@@ -13,6 +13,9 @@ obj/
 *.user
 *.suo
 appsettings.Development.json
+TestResults/
+coverage.cobertura.xml
+coverage.opencover.xml
 
 # =========================
 # Java (Spring Boot)
