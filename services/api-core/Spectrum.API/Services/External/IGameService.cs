@@ -28,6 +28,25 @@ namespace Spectrum.API.Services.External
         /// <returns>The detailed metadata profile of the requested game.</returns>
         Task<Game> GetGameDetailsAsync(int externalGameId);
 
+        /// <summary>
+        /// Retrieves a game together with all associated reviews and moderation metadata.
+        /// </summary>
+        /// <param name="externalGameId">
+        /// The RAWG identifier of the game whose review information should be loaded.
+        /// </param>
+        /// <param name="currentUserId">
+        /// Optional identifier of the authenticated user used to determine ownership permissions.
+        /// </param>
+        /// <param name="isAdmin">
+        /// Indicates whether the current user has administrative privileges.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Cancellation token.
+        /// </param>
+        /// <returns>
+        /// A detailed game review summary including game metadata, review list,
+        /// aggregate rating, and review count.
+        /// </returns>
         Task<GameReviewDetailDto> GetGameReviewDetailAsync(
             int externalGameId,
             Guid? currentUserId = null,

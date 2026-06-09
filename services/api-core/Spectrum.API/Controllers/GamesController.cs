@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Spectrum.API.Dtos.External;
+using Spectrum.API.Dtos.Reviews;
 using Spectrum.API.Models;
 using Spectrum.API.Services.External;
 using Spectrum.API.Utilities;
@@ -67,6 +68,25 @@ namespace Spectrum.API.Controllers
             return Ok(gameDetails);
         }
 
+        /// <summary>
+        /// Retrieves the review summary for a specific game, including all associated reviews,
+        /// aggregate rating statistics, and permission metadata for the authenticated user.
+        /// </summary>
+        /// <param name="id">The RAWG identifier of the game whose review details will be retrieved.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>
+        /// A <see cref="GameReviewDetailDto"/> containing:
+        /// <list type="bullet">
+        /// <item><description>The game metadata.</description></item>
+        /// <item><description>The list of associated reviews.</description></item>
+        /// <item><description>The average rating calculated from available reviews.</description></item>
+        /// <item><description>The total number of reviews.</description></item>
+        /// <item><description>User-specific permissions such as ownership and deletion rights.</description></item>
+        /// </list>
+        /// </returns>
+        /// <response code="200">The review details were retrieved successfully.</response>
+        /// <response code="401">The request was made without valid authentication credentials.</response>
+        /// <response code="404">The specified game does not exist in the catalog.</response>
         [HttpGet("{id}/reviews-detail")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -83,6 +103,17 @@ namespace Spectrum.API.Controllers
             return Ok(detail);
         }
 
+        /// <summary>
+        /// Attempts to resolve the identifier of the currently authenticated user from the JWT claims.
+        /// </summary>
+        /// <remarks>
+        /// The method checks multiple claim names commonly used by authentication providers:
+        /// <c>NameIdentifier</c>, <c>sub</c>, and <c>userId</c>.
+        /// If no valid GUID is found, <c>null</c> is returned.
+        /// </remarks>
+        /// <returns>
+        /// The authenticated user's identifier when available; otherwise <c>null</c>.
+        /// </returns>
         private Guid? GetCurrentUserIdOrDefault()
         {
             if (User.Identity?.IsAuthenticated != true)
