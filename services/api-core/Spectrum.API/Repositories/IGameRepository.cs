@@ -82,8 +82,10 @@ namespace Spectrum.API.Repositories
             }
         }
 
+        /// <inheritdoc/>
         public IEnumerable<Game> GetAll() => _games;
 
+        /// <inheritdoc/>
         public (IEnumerable<Game> Items, int TotalCount) Search(GameQueryDto query)
         {
             var result = _games.AsQueryable();
@@ -113,7 +115,10 @@ namespace Spectrum.API.Repositories
             return (pagedItems, totalFiltered);
         }
 
+        /// <inheritdoc/>
         public Game? GetById(int id) => _games.FirstOrDefault(g => g.RawgId == id);
+
+        /// <inheritdoc/>
         public Game? GetByGuid(Guid id) => _games.FirstOrDefault(g => g.Id == id);
     }
 }

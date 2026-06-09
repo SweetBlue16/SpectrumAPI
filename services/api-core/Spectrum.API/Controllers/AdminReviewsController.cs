@@ -10,6 +10,10 @@ using System.Security.Claims;
 
 namespace Spectrum.API.Controllers
 {
+    /// <summary>
+    /// Administrative controller responsible for reviewing, searching, and removing user reviews.
+    /// Access is restricted to users with the Admin role.
+    /// </summary>
     [ApiController]
     [Route("api/admin/reviews")]
     [Authorize(Roles = Constants.Roles.Admin)]
@@ -19,6 +23,12 @@ namespace Spectrum.API.Controllers
         private readonly IGameRepository _gameRepository;
         private readonly IReviewService _reviewService;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AdminReviewsController"/> class.
+        /// </summary>
+        /// <param name="context">Database context used to query reviews.</param>
+        /// <param name="gameRepository">Repository used to retrieve game information.</param>
+        /// <param name="reviewService">Service responsible for review management operations.</param>
         public AdminReviewsController(
             SpectrumDbContext context,
             IGameRepository gameRepository,
@@ -30,6 +40,35 @@ namespace Spectrum.API.Controllers
             _reviewService = reviewService;
         }
 
+        /// <summary>
+        /// Searches and retrieves reviews for moderation purposes.
+        /// Supports filtering by game identifier, game title, review title,
+        /// username, sorting, and pagination.
+        /// </summary>
+        /// <param name="gameId">
+        /// Optional game identifier used to filter reviews belonging to a specific game.
+        /// </param>
+        /// <param name="gameQuery">
+        /// Optional game title search term used to locate matching games.
+        /// </param>
+        /// <param name="search">
+        /// Optional search term used to filter reviews by title or author username.
+        /// </param>
+        /// <param name="sort">
+        /// Sorting criteria. Supported values:
+        /// date_desc, date_asc, likes, dislikes, alpha.
+        /// </param>
+        /// <param name="page">Requested page number.</param>
+        /// <param name="pageSize">Number of records per page.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>
+        /// A paginated collection of reviews that match the specified criteria.
+        /// Returns an empty result when neither <paramref name="gameId"/> nor
+        /// <paramref name="gameQuery"/> is provided.
+        /// </returns>
+        /// <response code="200">
+        /// Reviews were retrieved successfully.
+        /// </response>
         [HttpGet]
         [ProducesResponseType(typeof(PagedResult<ReviewResponseDto>), StatusCodes.Status200OK)]
         public async Task<IActionResult> Search(
@@ -133,6 +172,30 @@ namespace Spectrum.API.Controllers
             });
         }
 
+        /// <summary>
+        /// Deletes a review as an administrative moderation action.
+        /// The deletion reason is recorded and may be used for notifications.
+        /// </summary>
+        /// <param name="reviewId">Identifier of the review to delete.</param>
+        /// <param name="dto">
+        /// Request containing the administrative deletion reason.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>
+        /// <see cref="NoContentResult"/> when the review is successfully deleted.
+        /// </returns>
+        /// <response code="204">
+        /// Review deleted successfully.
+        /// </response>
+        /// <response code="400">
+        /// The deletion request is invalid.
+        /// </response>
+        /// <response code="404">
+        /// The specified review was not found.
+        /// </response>
+        /// <response code="403">
+        /// The current user is not authorized to perform this action.
+        /// </response>
         [HttpDelete("{reviewId:guid}")]
         public async Task<IActionResult> Delete(
             Guid reviewId,
