@@ -12,6 +12,10 @@ using System.Security.Claims;
 
 namespace Spectrum.API.Controllers
 {
+    /// <summary>
+    /// Provides administrative moderation endpoints for reviewing,
+    /// resolving, dismissing, and acting upon user-generated reports.
+    /// </summary>
     [ApiController]
     [Route("api/admin/reports")]
     [Authorize(Roles = Constants.Roles.Admin)]
@@ -24,6 +28,21 @@ namespace Spectrum.API.Controllers
         private readonly IUserModerationService _userModerationService;
         private readonly SpectrumDbContext _context;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AdminReportsController"/> class.
+        /// </summary>
+        /// <param name="reportService">
+        /// Service responsible for report management and moderation workflows.
+        /// </param>
+        /// <param name="reviewService">
+        /// Service responsible for review moderation actions.
+        /// </param>
+        /// <param name="userModerationService">
+        /// Service responsible for user suspension and moderation actions.
+        /// </param>
+        /// <param name="context">
+        /// Database context used to enrich report information.
+        /// </param>
         public AdminReportsController(
             IReportService reportService,
             IReviewService reviewService,
@@ -36,6 +55,33 @@ namespace Spectrum.API.Controllers
             _context = context;
         }
 
+        /// <summary>
+        /// Retrieves a paginated list of moderation reports with optional
+        /// filtering, searching, and sorting capabilities.
+        /// </summary>
+        /// <param name="page">The requested page number.</param>
+        /// <param name="pageSize">The number of reports per page.</param>
+        /// <param name="status">
+        /// Optional report status filter. Use ALL to retrieve reports of every status.
+        /// </param>
+        /// <param name="targetType">
+        /// Optional reported entity type filter.
+        /// </param>
+        /// <param name="search">
+        /// Optional search text applied to report identifiers and reasons.
+        /// </param>
+        /// <param name="sort">
+        /// Sorting mode. Supported values include date_desc and type.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A paginated collection of moderation reports.
+        /// </returns>
+        /// <response code="200">
+        /// Reports retrieved successfully.
+        /// </response>
         [HttpGet]
         [ProducesResponseType(typeof(PagedResult<ReportDetailsDto>), StatusCodes.Status200OK)]
         public async Task<IActionResult> List(
@@ -94,6 +140,24 @@ namespace Spectrum.API.Controllers
             });
         }
 
+        /// <summary>
+        /// Retrieves the details of a specific moderation report.
+        /// </summary>
+        /// <param name="reportId">
+        /// The identifier of the report to retrieve.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// The requested report details.
+        /// </returns>
+        /// <response code="200">
+        /// Report found successfully.
+        /// </response>
+        /// <response code="404">
+        /// The specified report does not exist.
+        /// </response>
         [HttpGet("{reportId}")]
         [ProducesResponseType(typeof(ReportDetailsDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetById(string reportId, CancellationToken cancellationToken)
@@ -113,6 +177,27 @@ namespace Spectrum.API.Controllers
             throw new SpectrumNotFoundException(Constants.ErrorMessages.ResourceNotFound);
         }
 
+        /// <summary>
+        /// Updates the moderation status of a report.
+        /// </summary>
+        /// <param name="reportId">
+        /// The identifier of the report to update.
+        /// </param>
+        /// <param name="dto">
+        /// The new moderation status and resolution information.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating the report was updated.
+        /// </returns>
+        /// <response code="200">
+        /// Report status updated successfully.
+        /// </response>
+        /// <response code="401">
+        /// The current administrator identity is invalid.
+        /// </response>
         [HttpPatch("{reportId}/status")]
         public async Task<IActionResult> Resolve(
             string reportId,
@@ -130,6 +215,28 @@ namespace Spectrum.API.Controllers
             return Ok(new { Message = "Report status updated." });
         }
 
+        /// <summary>
+        /// Deletes the content associated with a report and automatically
+        /// marks the report as resolved.
+        /// </summary>
+        /// <param name="reportId">
+        /// The identifier of the report being processed.
+        /// </param>
+        /// <param name="dto">
+        /// Resolution details including the moderation reason.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating the content was deleted.
+        /// </returns>
+        /// <response code="200">
+        /// Reported content deleted successfully.
+        /// </response>
+        /// <response code="400">
+        /// The report target type is not supported or a deletion reason was not provided.
+        /// </response>
         [HttpPost("{reportId}/delete-content")]
         public async Task<IActionResult> DeleteReportedContent(
             string reportId,
@@ -165,6 +272,27 @@ namespace Spectrum.API.Controllers
             return Ok(new { Message = "Reported content deleted." });
         }
 
+        /// <summary>
+        /// Suspends the author associated with the reported content.
+        /// </summary>
+        /// <param name="reportId">
+        /// The identifier of the report being processed.
+        /// </param>
+        /// <param name="dto">
+        /// Resolution details and moderation notes.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating the author was suspended.
+        /// </returns>
+        /// <response code="200">
+        /// Author suspended successfully.
+        /// </response>
+        /// <response code="400">
+        /// The reported user could not be resolved.
+        /// </response>
         [HttpPost("{reportId}/suspend-author")]
         public async Task<IActionResult> SuspendReportedAuthor(
             string reportId,
@@ -185,6 +313,10 @@ namespace Spectrum.API.Controllers
             return Ok(new { Message = "Reported author suspended." });
         }
 
+        /// <summary>
+        /// Enriches report data with usernames, normalized identifiers,
+        /// timestamps, and content previews for presentation purposes.
+        /// </summary>
         private async Task EnrichReportsAsync(List<ReportDetailsDto> reports, CancellationToken cancellationToken)
         {
             if (reports.Count == 0)
@@ -215,6 +347,21 @@ namespace Spectrum.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Searches for a report across all known moderation statuses.
+        /// </summary>
+        /// <param name="report">
+        /// Identifier of the report to locate.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// The matching report.
+        /// </returns>
+        /// <exception cref="SpectrumNotFoundException">
+        /// Thrown when the report cannot be found.
+        /// </exception>
         private async Task<string> ResolveTargetSnippetAsync(ReportDetailsDto report, CancellationToken cancellationToken)
         {
             var targetId = TryParseGuid(report.TargetId);
@@ -265,6 +412,21 @@ namespace Spectrum.API.Controllers
             throw new SpectrumNotFoundException(Constants.ErrorMessages.ResourceNotFound);
         }
 
+        /// <summary>
+        /// Resolves the user associated with a reported entity.
+        /// </summary>
+        /// <param name="report">
+        /// Report being processed.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// The identifier of the user associated with the report target.
+        /// </returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when the target user cannot be resolved.
+        /// </exception>
         private async Task<Guid> ResolveReportTargetUserIdAsync(ReportDetailsDto report, CancellationToken cancellationToken)
         {
             if (report.TargetType.Equals("USER", StringComparison.OrdinalIgnoreCase) &&
@@ -302,6 +464,19 @@ namespace Spectrum.API.Controllers
             return moderatorId;
         }
 
+        /// <summary>
+        /// Resolves and validates the moderation reason required for
+        /// destructive administrative actions.
+        /// </summary>
+        /// <param name="dto">
+        /// Resolution payload submitted by the administrator.
+        /// </param>
+        /// <returns>
+        /// The validated moderation reason.
+        /// </returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when no valid reason is provided.
+        /// </exception>
         private static string ResolveRequiredReason(UpdateReportStatusDto dto)
         {
             var reason = string.IsNullOrWhiteSpace(dto.ResolutionNotes) ? dto.AdminNotes : dto.ResolutionNotes;

@@ -8,20 +8,64 @@ using Spectrum.API.Services.Votes;
 
 namespace Spectrum.API.Services.Reviews
 {
+    /// <summary>
+    /// Defines the contract for review management operations, including creation,
+    /// retrieval, updates, and deletion.
+    /// </summary>
     public interface IReviewService
     {
+        /// <summary>
+        /// Creates a new review after validating game identifier,
+        /// rating, textual content, and optional media attachment data.
+        /// </summary>
+        /// <param name="dto">Review creation request data.</param>
+        /// <param name="userId">Identifier of the author creating the review.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The newly created review mapped to a response DTO.</returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when any validation rule is violated.
+        /// </exception>
         Task<ReviewResponseDto> CreateAsync(
             CreateReviewDto dto,
             Guid userId,
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Retrieves a review by its identifier and enriches the result
+        /// with the current user's voting information when available.
+        /// </summary>
+        /// <param name="reviewId">Review identifier.</param>
+        /// <param name="currentUserId">
+        /// Optional identifier of the requesting user.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The requested review.</returns>
+        /// <exception cref="SpectrumNotFoundException">
+        /// Thrown when the review does not exist.
+        /// </exception>
         Task<ReviewResponseDto> GetByIdAsync(
             Guid reviewId,
             Guid? currentUserId = null,
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Retrieves all reviews associated with a specific game and
+        /// enriches each review with vote information and moderation flags.
+        /// </summary>
+        /// <param name="gameId">Game identifier.</param>
+        /// <param name="currentUserId">
+        /// Optional identifier of the requesting user.
+        /// </param>
+        /// <param name="isAdmin">
+        /// Indicates whether the requester has administrative privileges.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>A collection of reviews for the specified game.</returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when the game identifier is invalid.
+        /// </exception>
         Task<IReadOnlyList<ReviewResponseDto>> GetByGameIdAsync(
             int gameId,
             Guid? currentUserId = null,
@@ -29,12 +73,39 @@ namespace Spectrum.API.Services.Reviews
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Retrieves all reviews authored by a specific user and enriches
+        /// them with current vote information when available.
+        /// </summary>
+        /// <param name="userId">Author identifier.</param>
+        /// <param name="currentUserId">
+        /// Optional identifier of the requesting user.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>A collection of reviews created by the specified user.</returns>
         Task<IReadOnlyList<ReviewResponseDto>> GetByUserIdAsync(
             Guid userId,
             Guid? currentUserId = null,
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Updates an existing review after validating ownership,
+        /// content integrity, rating constraints, and attachment data.
+        /// </summary>
+        /// <param name="reviewId">Review identifier.</param>
+        /// <param name="dto">Review update data.</param>
+        /// <param name="userId">Identifier of the requesting user.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="SpectrumNotFoundException">
+        /// Thrown when the review does not exist.
+        /// </exception>
+        /// <exception cref="SpectrumForbiddenException">
+        /// Thrown when the user is not the review owner.
+        /// </exception>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when validation rules are violated.
+        /// </exception>
         Task UpdateAsync(
             Guid reviewId,
             UpdateReviewDto dto,
@@ -42,6 +113,32 @@ namespace Spectrum.API.Services.Reviews
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Performs a soft deletion of a review. When executed by an
+        /// administrator, moderation metadata and deletion reasons are
+        /// recorded and notification workflows are triggered.
+        /// </summary>
+        /// <param name="reviewId">Review identifier.</param>
+        /// <param name="userId">
+        /// Identifier of the user performing the deletion.
+        /// </param>
+        /// <param name="isAdmin">
+        /// Indicates whether the action is performed by an administrator.
+        /// </param>
+        /// <param name="deletionReason">
+        /// Moderation reason for deletion when applicable.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <exception cref="SpectrumNotFoundException">
+        /// Thrown when the review does not exist.
+        /// </exception>
+        /// <exception cref="SpectrumForbiddenException">
+        /// Thrown when the requester lacks permission.
+        /// </exception>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when an administrator deletion does not provide
+        /// a valid moderation reason.
+        /// </exception>
         Task DeleteAsync(
             Guid reviewId,
             Guid userId,
@@ -51,6 +148,11 @@ namespace Spectrum.API.Services.Reviews
         );
     }
 
+    /// <summary>
+    /// Service responsible for managing review lifecycle operations,
+    /// including creation, retrieval, updates, deletion, validation,
+    /// vote enrichment, and moderation-related actions.
+    /// </summary>
     public class ReviewService : IReviewService
     {
         private const string ReviewNotFoundMessage = "La resena solicitada no existe.";
@@ -75,6 +177,15 @@ namespace Spectrum.API.Services.Reviews
         private readonly IVoteService? _voteService;
         private readonly ILogger<ReviewService>? _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ReviewService"/> class with
+        /// </summary>
+        /// <param name="reviewRepository">The repository for managing review data.</param>
+        /// <param name="gameRepository">The repository for managing game data.</param>
+        /// <param name="emailService">The service for sending email notifications.</param>
+        /// <param name="adminNotificationService">The service for sending administrator notifications.</param>
+        /// <param name="voteService">The service for managing vote data.</param>
+        /// <param name="logger">The logger for recording diagnostic information.</param>
         public ReviewService(
             IReviewRepository reviewRepository,
             IGameRepository? gameRepository = null,
@@ -91,6 +202,7 @@ namespace Spectrum.API.Services.Reviews
             _logger = logger;
         }
 
+        /// <inheritdoc/>
         public async Task<ReviewResponseDto> CreateAsync(
             CreateReviewDto dto,
             Guid userId,
@@ -128,6 +240,7 @@ namespace Spectrum.API.Services.Reviews
             return MapToResponseDto(persistedReview ?? createdReview, userId, currentUserVote: null);
         }
 
+        /// <inheritdoc/>
         public async Task<ReviewResponseDto> GetByIdAsync(
             Guid reviewId,
             Guid? currentUserId = null,
@@ -150,6 +263,7 @@ namespace Spectrum.API.Services.Reviews
             );
         }
 
+        /// <inheritdoc/>
         public async Task<IReadOnlyList<ReviewResponseDto>> GetByGameIdAsync(
             int gameId,
             Guid? currentUserId = null,
@@ -177,6 +291,7 @@ namespace Spectrum.API.Services.Reviews
                 .ToList();
         }
 
+        /// <inheritdoc/>
         public async Task<IReadOnlyList<ReviewResponseDto>> GetByUserIdAsync(
             Guid userId,
             Guid? currentUserId = null,
@@ -200,6 +315,7 @@ namespace Spectrum.API.Services.Reviews
                 .ToList();
         }
 
+        /// <inheritdoc/>
         public async Task UpdateAsync(
             Guid reviewId,
             UpdateReviewDto dto,
@@ -260,6 +376,7 @@ namespace Spectrum.API.Services.Reviews
             }
         }
 
+        /// <inheritdoc/>
         public async Task DeleteAsync(
             Guid reviewId,
             Guid userId,

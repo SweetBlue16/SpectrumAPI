@@ -8,13 +8,40 @@ using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Reports
 {
+    /// <summary>
+    /// Defines operations for creating, retrieving, and moderating user reports.
+    /// </summary>
     public interface IReportService
     {
+        /// <summary>
+        /// Submits a new report against a target entity.
+        /// </summary>
+        /// <param name="reporterId">Identifier of the user submitting the report.</param>
+        /// <param name="dto">Report creation payload.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
         Task SubmitReportAsync(Guid reporterId, CreateReportDto dto, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Retrieves all reports that match the specified status.
+        /// </summary>
+        /// <param name="status">Report status to filter by.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>A collection of reports matching the requested status.</returns>
         Task<IEnumerable<ReportDetailsDto>> GetReportsByStatusAsync(string status, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Updates the status and moderation notes of a report.
+        /// </summary>
+        /// <param name="reportId">Identifier of the report to update.</param>
+        /// <param name="moderatorId">Identifier of the moderator performing the action.</param>
+        /// <param name="dto">Status update payload.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
         Task UpdateReportStatusAsync(string reportId, Guid moderatorId, UpdateReportStatusDto dto, CancellationToken cancellationToken = default);
     }
 
+    /// <summary>
+    /// Provides report management functionality through the Social microservice using gRPC.
+    /// </summary>
     public class ReportsService : IReportService
     {
         private readonly ReportService.ReportServiceClient  _reportServiceClient;
@@ -22,6 +49,13 @@ namespace Spectrum.API.Services.Reports
         private readonly IUserRepository? _userRepository;
         private readonly IEmailService? _emailService;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ReportsService"/> class.
+        /// </summary>
+        /// <param name="reportServiceClient">gRPC client used to communicate with the Social report service.</param>
+        /// <param name="logger">Logger used for diagnostics and error reporting.</param>
+        /// <param name="userRepository">Repository used to resolve affected users.</param>
+        /// <param name="emailService">Service used to send moderation notifications.</param>
         public ReportsService(
             ReportService.ReportServiceClient reportServiceClient,
             ILogger<ReportsService> logger,
@@ -35,6 +69,7 @@ namespace Spectrum.API.Services.Reports
             _emailService = emailService;
         }
 
+        /// <inheritdoc />
         public async Task<IEnumerable<ReportDetailsDto>> GetReportsByStatusAsync(string status, CancellationToken cancellationToken = default)
         {
             var reports = new List<ReportDetailsDto>();
@@ -72,6 +107,7 @@ namespace Spectrum.API.Services.Reports
             return reports;
         }
 
+        /// <inheritdoc />
         public async Task SubmitReportAsync(Guid reporterId, CreateReportDto dto, CancellationToken cancellationToken = default)
         {
             try
@@ -98,6 +134,7 @@ namespace Spectrum.API.Services.Reports
             }
         }
 
+        /// <inheritdoc />
         public async Task UpdateReportStatusAsync(string reportId, Guid moderatorId, UpdateReportStatusDto dto, CancellationToken cancellationToken = default)
         {
             try
@@ -129,6 +166,14 @@ namespace Spectrum.API.Services.Reports
             }
         }
 
+        /// <summary>
+        /// Resolves the effective status value from the update payload and validates it.
+        /// </summary>
+        /// <param name="dto">Status update payload.</param>
+        /// <returns>A valid moderation status.</returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when the provided status is not supported.
+        /// </exception>
         private static string ResolveStatus(UpdateReportStatusDto dto)
         {
             var status = string.IsNullOrWhiteSpace(dto.NewStatus) ? dto.Status : dto.NewStatus;
@@ -140,6 +185,11 @@ namespace Spectrum.API.Services.Reports
             return status;
         }
 
+        /// <summary>
+        /// Resolves the moderation notes associated with a report action.
+        /// </summary>
+        /// <param name="dto">Status update payload.</param>
+        /// <returns>The moderation notes to persist.</returns>
         private static string ResolveNotes(UpdateReportStatusDto dto)
         {
             return string.IsNullOrWhiteSpace(dto.ResolutionNotes)
@@ -147,6 +197,13 @@ namespace Spectrum.API.Services.Reports
                 : dto.ResolutionNotes;
         }
 
+        /// <summary>
+        /// Attempts to notify the affected user when a report targeting their account
+        /// has been reviewed by a moderator.
+        /// </summary>
+        /// <param name="reportId">Identifier of the processed report.</param>
+        /// <param name="dto">Status update payload.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
         private async Task TrySendReportActionEmailAsync(string reportId, UpdateReportStatusDto dto, CancellationToken cancellationToken)
         {
             if (_userRepository is null || _emailService is null)
@@ -181,6 +238,13 @@ namespace Spectrum.API.Services.Reports
             }
         }
 
+        /// <summary>
+        /// Retrieves a specific report from the collection associated with the provided status.
+        /// </summary>
+        /// <param name="reportId">Identifier of the report to locate.</param>
+        /// <param name="status">Status used to query reports.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>The matching report if found; otherwise, <c>null</c>.</returns>
         private async Task<ReportDetailsDto?> ResolveReportAsync(
             string reportId,
             string status,
