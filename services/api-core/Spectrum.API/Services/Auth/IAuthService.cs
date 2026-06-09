@@ -19,7 +19,10 @@ namespace Spectrum.API.Services.Auth
         /// Registers a new standard user account (Reviewer) using the provided registration details.
         /// </summary>
         /// <param name="registerDto">The registration information for the new user, including username, email, and password. Cannot be null.</param>
-        /// <returns>An <see cref="AuthResponseDto"/> containing the authentication token and account details for the newly registered user.</returns>
+        /// <returns>
+        /// A <see cref="RegisterResponseDto"/> containing the email address,
+        /// verification requirements, and registration status information.
+        /// </returns>
         /// <exception cref="SpectrumBusinessException">Thrown when the email or username is already registered.</exception>
         Task<RegisterResponseDto> RegisterAsync(RegisterDto registerDto);
 
@@ -32,6 +35,20 @@ namespace Spectrum.API.Services.Auth
         /// <exception cref="SpectrumBusinessException">Thrown if any required personal detail is missing or if email/username is already taken.</exception>
         Task<AuthResponseDto> RegisterAdminAsync(RegisterAdminDto registerAdminDto);
 
+        /// <summary>
+        /// Registers a new administrator account on behalf of an authenticated administrator.
+        /// </summary>
+        /// <param name="registerAdminDto">
+        /// The registration information for the administrator account to be created.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// An <see cref="AuthResponseDto"/> containing the authentication token and account details
+        /// for the newly created administrator.
+        /// </returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown if the email or username is already registered, or if required information is invalid.
+        /// </exception>
         Task<AuthResponseDto> RegisterAdminByAdminAsync(RegisterAdminDto registerAdminDto);
 
         /// <summary>
@@ -51,10 +68,79 @@ namespace Spectrum.API.Services.Auth
         /// <exception cref="SpectrumUnauthorizedException">Thrown if the Google token is invalid or if the associated local account is suspended.</exception>
         Task<AuthResponseDto> GoogleLoginAsync(GoogleAuthDto googleAuthDto);
 
+        /// <summary>
+        /// Verifies a user's registration code and activates the account.
+        /// </summary>
+        /// <param name="verifyDto">
+        /// The verification request containing the user's email address and registration code.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// An <see cref="AuthResponseDto"/> containing the authenticated user's information
+        /// and a newly issued JWT token.
+        /// </returns>
+        /// <exception cref="SpectrumUnauthorizedException">
+        /// Thrown when the verification code is invalid, expired, or does not match the specified email address.
+        /// </exception>
         Task<AuthResponseDto> VerifyRegistrationAsync(VerifyRegistrationCodeDto verifyDto);
+
+        /// <summary>
+        /// Generates and sends a new registration verification code to a pending user account.
+        /// </summary>
+        /// <param name="resendDto">
+        /// The request containing the email address associated with the account awaiting verification.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// A <see cref="MessageResponseDto"/> confirming that a new verification code has been issued.
+        /// </returns>
+        /// <exception cref="SpectrumBusinessException">
+        /// Thrown when a verification code was recently issued and the resend cooldown period has not yet elapsed.
+        /// </exception>
         Task<MessageResponseDto> ResendRegistrationCodeAsync(ResendRegistrationCodeDto resendDto);
+
+        /// <summary>
+        /// Initiates the password recovery workflow by generating and sending a verification code.
+        /// </summary>
+        /// <param name="forgotPasswordDto">
+        /// The password recovery request containing the user's email address.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// A <see cref="MessageResponseDto"/> confirming that the recovery process has been initiated.
+        /// </returns>
         Task<MessageResponseDto> ForgotPasswordAsync(ForgotPasswordDto forgotPasswordDto);
+
+        /// <summary>
+        /// Validates a password recovery verification code and creates a temporary verification session.
+        /// </summary>
+        /// <param name="verifyDto">
+        /// The verification request containing the user's email address and recovery code.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// A <see cref="PasswordCodeVerifiedDto"/> containing a temporary verification token
+        /// required to complete the password reset process.
+        /// </returns>
+        /// <exception cref="SpectrumUnauthorizedException">
+        /// Thrown when the verification code is invalid, expired, or exceeds the maximum number of allowed attempts.
+        /// </exception>
         Task<PasswordCodeVerifiedDto> VerifyPasswordResetCodeAsync(VerifyPasswordCodeDto verifyDto);
+
+        /// <summary>
+        /// Completes the password reset workflow using a previously issued verification token.
+        /// </summary>
+        /// <param name="resetPasswordDto">
+        /// The password reset request containing the user's email address,
+        /// verification token, and new password.
+        /// Cannot be null.
+        /// </param>
+        /// <returns>
+        /// A <see cref="MessageResponseDto"/> confirming that the password has been successfully updated.
+        /// </returns>
+        /// <exception cref="SpectrumUnauthorizedException">
+        /// Thrown when the verification token is invalid, expired, or does not match the specified email address.
+        /// </exception>
         Task<MessageResponseDto> ResetPasswordAsync(ResetPasswordDto resetPasswordDto);
     }
 
@@ -141,6 +227,7 @@ namespace Spectrum.API.Services.Auth
             return await CreateAdminAsync(registerAdminDto);
         }
 
+        /// <inheritdoc />
         public async Task<AuthResponseDto> RegisterAdminByAdminAsync(RegisterAdminDto registerAdminDto)
         {
             await AuthUtilities.ValidateRegisterInput(registerAdminDto, _userRepository);
@@ -220,6 +307,7 @@ namespace Spectrum.API.Services.Auth
             };
         }
 
+        /// <inheritdoc />
         public async Task<AuthResponseDto> VerifyRegistrationAsync(VerifyRegistrationCodeDto verifyDto)
         {
             var email = NormalizeEmail(verifyDto.Email);
@@ -242,6 +330,7 @@ namespace Spectrum.API.Services.Auth
             return BuildAuthResponse(user);
         }
 
+        /// <inheritdoc />
         public async Task<MessageResponseDto> ResendRegistrationCodeAsync(ResendRegistrationCodeDto resendDto)
         {
             var email = NormalizeEmail(resendDto.Email);
@@ -257,6 +346,7 @@ namespace Spectrum.API.Services.Auth
             return new MessageResponseDto { Message = Constants.ErrorMessages.VerificationCodeSent };
         }
 
+        /// <inheritdoc />
         public async Task<MessageResponseDto> ForgotPasswordAsync(ForgotPasswordDto forgotPasswordDto)
         {
             var email = NormalizeEmail(forgotPasswordDto.Email);
@@ -297,6 +387,7 @@ namespace Spectrum.API.Services.Auth
             return new MessageResponseDto { Message = Constants.ErrorMessages.PasswordResetInstructionsSent };
         }
 
+        /// <inheritdoc />
         public async Task<PasswordCodeVerifiedDto> VerifyPasswordResetCodeAsync(VerifyPasswordCodeDto verifyDto)
         {
             var email = NormalizeEmail(verifyDto.Email);
@@ -320,6 +411,7 @@ namespace Spectrum.API.Services.Auth
             };
         }
 
+        /// <inheritdoc />
         public async Task<MessageResponseDto> ResetPasswordAsync(ResetPasswordDto resetPasswordDto)
         {
             var email = NormalizeEmail(resetPasswordDto.Email);
