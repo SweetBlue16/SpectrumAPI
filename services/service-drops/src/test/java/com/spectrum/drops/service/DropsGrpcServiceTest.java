@@ -627,6 +627,17 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void publishEventWhenEventIdIsBlankShouldReturnValidationError() {
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+
+        dropsGrpcService.publishEvent(PublishEventRequest.newBuilder().build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertEquals("EventId is required.", observer.value.getMessage());
+        verify(eventRepository, never()).findById(anyString());
+    }
+
+    @Test
     void finishEventWithoutWinnerAndCancelFlagShouldCancelEvent() {
         String eventId = "event-cancel";
         Event event = activeEvent(eventId);
@@ -645,9 +656,46 @@ class DropsGrpcServiceTest {
     }
 
     @Test
+    void finishEventWithWinnerAndCancelFlagShouldFinishInsteadOfCancel() {
+        String eventId = "event-finish-winner";
+        Event event = activeEvent(eventId);
+        event.setWinners(List.of(Winner.builder()
+                .userId("winner-1")
+                .username("winner")
+                .claimedAt(getNow())
+                .build()));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.finishEvent(FinishEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setCancelIfWithoutWinner(true)
+                .build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("FINISHED", event.getStatus());
+        verify(eventRepository).save(event);
+    }
+
+    @Test
     void finishEventWhenAlreadyClosedShouldReturnSuccessWithoutSavingAgain() {
         String eventId = "event-closed";
         Event event = exhaustedEvent(eventId);
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.finishEvent(FinishEventRequest.newBuilder().setEventId(eventId).build(), observer);
+
+        assertTrue(observer.value.getSuccess());
+        assertEquals("Event already closed.", observer.value.getMessage());
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    @Test
+    void finishEventWhenAlreadyCancelledShouldReturnSuccessWithoutSavingAgain() {
+        String eventId = "event-cancelled";
+        Event event = activeEvent(eventId);
+        event.setStatus("CANCELLED");
         when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
 
         CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
@@ -715,6 +763,34 @@ class DropsGrpcServiceTest {
         assertEquals("REVEAL_READY", observer.value.getStatus());
         assertTrue(observer.value.getCurrentUserJoined());
         assertTrue(observer.value.getCanClaim());
+    }
+
+    @Test
+    void getEventStatusWhenRequesterAlreadyWonShouldMarkClaimedAndBlockClaimAction() {
+        String eventId = "event-already-won";
+        String userId = "winner-1";
+        Event event = activeEvent(eventId);
+        long now = getNow();
+        event.setJoinDeadlineAt(now - 5_000);
+        event.setRevealAt(now - 1_000);
+        event.setEndAt(now + 20_000);
+        event.setWinners(List.of(Winner.builder()
+                .userId(userId)
+                .username("winner")
+                .claimedAt(now)
+                .build()));
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+        when(participantRepository.existsByEventIdAndUserId(eventId, userId)).thenReturn(true);
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setRequesterUserId(userId)
+                .build(), observer);
+
+        assertTrue(observer.value.getCurrentUserJoined());
+        assertTrue(observer.value.getHasClaimed());
+        assertFalse(observer.value.getCanClaim());
     }
 
     @Test
@@ -788,6 +864,26 @@ class DropsGrpcServiceTest {
         assertEquals("", observer.value.getAccessKeyCode());
         assertEquals("User must join before claiming.", observer.value.getMessage());
         verify(mongoTemplate, never()).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
+    }
+
+    @Test
+    void claimAccessKeyWhenUserFieldsAreMissingShouldRejectBeforeRegistrationLookup() {
+        CapturingObserver<ClaimKeyResponse> missingUserObserver = new CapturingObserver<>();
+        dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                .setEventId("event-1")
+                .setUsername("player")
+                .build(), missingUserObserver);
+
+        CapturingObserver<ClaimKeyResponse> missingUsernameObserver = new CapturingObserver<>();
+        dropsGrpcService.claimAccessKey(ClaimKeyRequest.newBuilder()
+                .setEventId("event-1")
+                .setUserId("user-1")
+                .build(), missingUsernameObserver);
+
+        assertFalse(missingUserObserver.value.getSuccess());
+        assertFalse(missingUsernameObserver.value.getSuccess());
+        assertEquals("UserId and username are required.", missingUserObserver.value.getMessage());
+        verify(participantRepository, never()).existsByEventIdAndUserId(anyString(), anyString());
     }
 
     @Test
@@ -870,6 +966,301 @@ class DropsGrpcServiceTest {
 
         assertTrue(observer.value.getSuccess());
         verify(mongoTemplate).findAndModify(any(Query.class), any(UpdateDefinition.class), any(FindAndModifyOptions.class), eq(Event.class));
+    }
+
+    @Test
+    void listEventsShouldHandleUpcomingPastAndAllScopesWithoutRequesterLookups() {
+        when(mongoTemplate.count(any(Query.class), eq(Event.class))).thenReturn(1L);
+        when(mongoTemplate.find(any(Query.class), eq(Event.class))).thenReturn(List.of(activeEvent("event-1")));
+
+        CapturingObserver<EventListResponse> upcomingObserver = new CapturingObserver<>();
+        dropsGrpcService.listEvents(ListEventsRequest.newBuilder()
+                .setScope("UPCOMING")
+                .setPage(1)
+                .setPageSize(10)
+                .build(), upcomingObserver);
+
+        CapturingObserver<EventListResponse> pastObserver = new CapturingObserver<>();
+        dropsGrpcService.listEvents(ListEventsRequest.newBuilder()
+                .setScope("PAST")
+                .setPage(1)
+                .setPageSize(10)
+                .build(), pastObserver);
+
+        CapturingObserver<EventListResponse> allObserver = new CapturingObserver<>();
+        dropsGrpcService.listEvents(ListEventsRequest.newBuilder()
+                .setIncludeDrafts(true)
+                .setPage(1)
+                .setPageSize(10)
+                .build(), allObserver);
+
+        assertEquals(1, upcomingObserver.value.getTotalCount());
+        assertEquals(1, pastObserver.value.getTotalCount());
+        assertEquals(1, allObserver.value.getTotalCount());
+        verify(participantRepository, never()).findByUserId(anyString());
+        verify(mongoTemplate, times(3)).find(any(Query.class), eq(Event.class));
+    }
+
+    @Test
+    void listEventsWhenMongoFailsShouldReturnSafeEmptyPage() {
+        when(mongoTemplate.count(any(Query.class), eq(Event.class))).thenThrow(new RuntimeException("mongo down"));
+        CapturingObserver<EventListResponse> observer = new CapturingObserver<>();
+
+        dropsGrpcService.listEvents(ListEventsRequest.newBuilder()
+                .setScope("CURRENT")
+                .setPage(0)
+                .setPageSize(0)
+                .build(), observer);
+
+        assertEquals(1, observer.value.getPage());
+        assertEquals(1, observer.value.getPageSize());
+        assertEquals(0, observer.value.getEventsCount());
+    }
+
+    @Test
+    void getEventStatusShouldResolveDisplayStatusBranches() {
+        long now = getNow();
+        Event draft = activeEvent("event-draft");
+        draft.setStatus("DRAFT");
+        Event cancelled = activeEvent("event-cancelled");
+        cancelled.setStatus("CANCELLED");
+        Event full = activeEvent("event-full-status");
+        full.setStartAt(now - 10_000);
+        full.setJoinDeadlineAt(now + 10_000);
+        full.setAvailableSlots(0);
+        Event registrationClosed = activeEvent("event-closed-status");
+        registrationClosed.setJoinDeadlineAt(now - 10_000);
+        registrationClosed.setRevealAt(now + 10_000);
+        Event exhausted = activeEvent("event-exhausted-status");
+        exhausted.setJoinDeadlineAt(now - 10_000);
+        exhausted.setRevealAt(now - 1_000);
+        exhausted.setEndAt(now + 10_000);
+        exhausted.setKeysAvailable(0);
+        Event finished = activeEvent("event-finished-status");
+        finished.setJoinDeadlineAt(now - 20_000);
+        finished.setRevealAt(now - 15_000);
+        finished.setEndAt(now - 10_000);
+        finished.setFinishedAt(now - 5_000);
+        Event expired = activeEvent("event-expired-status");
+        expired.setJoinDeadlineAt(now - 7_200_000);
+        expired.setRevealAt(now - 7_100_000);
+        expired.setEndAt(now - 7_000_000);
+        expired.setFinishedAt(now - 7_000_000);
+
+        when(eventRepository.findById("event-draft")).thenReturn(Optional.of(draft));
+        when(eventRepository.findById("event-cancelled")).thenReturn(Optional.of(cancelled));
+        when(eventRepository.findById("event-full-status")).thenReturn(Optional.of(full));
+        when(eventRepository.findById("event-closed-status")).thenReturn(Optional.of(registrationClosed));
+        when(eventRepository.findById("event-exhausted-status")).thenReturn(Optional.of(exhausted));
+        when(eventRepository.findById("event-finished-status")).thenReturn(Optional.of(finished));
+        when(eventRepository.findById("event-expired-status")).thenReturn(Optional.of(expired));
+
+        assertStatus("event-draft", "DRAFT");
+        assertStatus("event-cancelled", "CANCELLED");
+        assertStatus("event-full-status", "FULL");
+        assertStatus("event-closed-status", "REGISTRATION_CLOSED");
+        assertStatus("event-exhausted-status", "EXHAUSTED");
+        assertStatus("event-finished-status", "FINISHED");
+        assertStatus("event-expired-status", "EXPIRED");
+    }
+
+    @Test
+    void getEventStatusWhenWinnerOnlyExistsInLegacyFieldsShouldExposeLegacyWinner() {
+        Event event = activeEvent("event-legacy-winner");
+        event.setWinners(null);
+        event.setWinnerUserId("legacy-winner");
+        event.setWinnerUsername("legacy");
+        event.setFinishedAt(getNow());
+        event.setRewardDeliveryStatus("SENT");
+        when(eventRepository.findById("event-legacy-winner")).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder()
+                .setEventId("event-legacy-winner")
+                .build(), observer);
+
+        assertEquals("legacy-winner", observer.value.getWinnerUserId());
+        assertEquals("legacy", observer.value.getWinnerUsername());
+        assertEquals("SENT", observer.value.getRewardDeliveryStatus());
+    }
+
+    @Test
+    void getEventStatusWhenEventDoesNotExistShouldReturnNotFoundStatus() {
+        when(eventRepository.findById("missing")).thenReturn(Optional.empty());
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder().setEventId("missing").build(), observer);
+
+        assertEquals("NOT_FOUND", observer.value.getStatus());
+        assertEquals("missing", observer.value.getEventId());
+    }
+
+    @Test
+    void getWonKeysShouldReturnLegacyWinnerWhenNoWinnerListExists() {
+        Event legacy = exhaustedEvent("event-legacy");
+        legacy.setWinners(null);
+        legacy.setWinnerUserId("user-legacy");
+        legacy.setGameTitle(null);
+        legacy.setFinishedAt(1234L);
+        legacy.setRewardDeliveryStatus(null);
+        Event emptyWinners = exhaustedEvent("event-empty-winners");
+        emptyWinners.setWinners(List.of());
+        emptyWinners.setWinnerUserId("other-user");
+        when(mongoTemplate.find(any(Query.class), eq(Event.class))).thenReturn(List.of(legacy, emptyWinners));
+
+        CapturingObserver<WonKeysResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getWonKeys(WonKeysRequest.newBuilder().setUserId("user-legacy").build(), observer);
+
+        assertEquals(1, observer.value.getWonKeysCount());
+        assertEquals("event-legacy", observer.value.getWonKeys(0).getEventId());
+        assertEquals("", observer.value.getWonKeys(0).getGameTitle());
+        assertEquals(1234L, observer.value.getWonKeys(0).getClaimedAt());
+        assertEquals("", observer.value.getWonKeys(0).getRewardDeliveryStatus());
+    }
+
+    @Test
+    void getWonKeysWhenUserIdIsMissingOrMongoFailsShouldReturnEmptyResponse() {
+        CapturingObserver<WonKeysResponse> missingUserObserver = new CapturingObserver<>();
+        dropsGrpcService.getWonKeys(WonKeysRequest.newBuilder().build(), missingUserObserver);
+        assertEquals(0, missingUserObserver.value.getWonKeysCount());
+
+        when(mongoTemplate.find(any(Query.class), eq(Event.class))).thenThrow(new RuntimeException("mongo down"));
+        CapturingObserver<WonKeysResponse> failureObserver = new CapturingObserver<>();
+        dropsGrpcService.getWonKeys(WonKeysRequest.newBuilder().setUserId("user-1").build(), failureObserver);
+        assertEquals(0, failureObserver.value.getWonKeysCount());
+    }
+
+    @Test
+    void createEventWhenRequiredPayloadFieldsAreInvalidShouldReturnValidationErrors() {
+        long now = getNow();
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("A".repeat(121))
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("G".repeat(121))
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("Halo")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("Halo")
+                .setPlatform("P".repeat(121))
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(0)
+                .addAccessKeys("DHA3-SDFE-32EF-SF5R")
+                .build());
+        assertCreateFails(CreateEventRequest.newBuilder()
+                .setTitle("Launch")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 20_000)
+                .setJoinDeadlineAt(now + 30_000)
+                .setRevealAt(now + 40_000)
+                .setEndAt(now + 50_000)
+                .setTotalSlots(10)
+                .build());
+    }
+
+    @Test
+    void updateEventWhenEventHasLegacyWinnerShouldReturnNotEditable() {
+        String eventId = "event-legacy-winner-edit";
+        Event event = activeEvent(eventId);
+        long now = getNow();
+        event.setStatus("UPCOMING");
+        event.setStartAt(now + 30 * 60_000);
+        event.setWinnerUserId("winner-1");
+        when(eventRepository.findById(eventId)).thenReturn(Optional.of(event));
+
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.updateEvent(validUpdateRequest(eventId, now).build(), observer);
+
+        assertFalse(observer.value.getSuccess());
+        assertTrue(observer.value.getMessage().contains("editado"));
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    private void assertStatus(String eventId, String expectedStatus) {
+        CapturingObserver<EventStatusResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.getEventStatus(GetEventRequest.newBuilder().setEventId(eventId).build(), observer);
+        assertEquals(expectedStatus, observer.value.getStatus());
+    }
+
+    private void assertCreateFails(CreateEventRequest request) {
+        CapturingObserver<EventActionResponse> observer = new CapturingObserver<>();
+        dropsGrpcService.createEvent(request, observer);
+        assertFalse(observer.value.getSuccess());
+        verify(eventRepository, never()).save(any(Event.class));
+    }
+
+    private static UpdateEventRequest.Builder validUpdateRequest(String eventId, long now) {
+        return UpdateEventRequest.newBuilder()
+                .setEventId(eventId)
+                .setTitle("Updated")
+                .setGameTitle("Halo")
+                .setPlatform("PC")
+                .setStartAt(now + 30 * 60_000)
+                .setJoinDeadlineAt(now + 40 * 60_000)
+                .setRevealAt(now + 50 * 60_000)
+                .setEndAt(now + 60 * 60_000)
+                .setTotalSlots(10);
     }
 
     private static Event activeEvent(String eventId) {

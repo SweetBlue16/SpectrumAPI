@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessException;
 
 import java.time.Instant;
 import java.util.Arrays;
@@ -67,6 +68,56 @@ class ReportGrpcServiceTest {
     }
 
     @Test
+    void createReportSupportedTargetTypesShouldPassValidation() {
+        for (String targetType : List.of("COMMENT", "USER", "GAME_CLIP")) {
+            SubmitReportRequest request = SubmitReportRequest.newBuilder()
+                    .setReporterId("user-" + targetType)
+                    .setTargetId("target-" + targetType)
+                    .setTargetType(targetType)
+                    .setReason("Policy")
+                    .build();
+            when(reportRepository.existsByReporterIdAndTargetId(request.getReporterId(), request.getTargetId()))
+                    .thenReturn(false);
+            when(reportRepository.save(any(Report.class))).thenReturn(new Report());
+
+            reportGrpcService.submitReport(request, responseObserver);
+        }
+
+        verify(reportRepository, times(3)).save(any(Report.class));
+        verify(responseObserver, times(3)).onNext(any(ReportResponse.class));
+        verify(responseObserver, times(3)).onCompleted();
+    }
+
+    @Test
+    void createReportWhenDuplicateExistsShouldReturnBusinessErrorWithoutSaving() {
+        SubmitReportRequest request = buildValidRequest();
+        when(reportRepository.existsByReporterIdAndTargetId(request.getReporterId(), request.getTargetId()))
+                .thenReturn(true);
+        ArgumentCaptor<ReportResponse> responseCaptor = ArgumentCaptor.forClass(ReportResponse.class);
+
+        reportGrpcService.submitReport(request, responseObserver);
+
+        verify(reportRepository, never()).save(any());
+        verify(responseObserver).onNext(responseCaptor.capture());
+        assertFalse(responseCaptor.getValue().getSuccess());
+        assertEquals("You have already reported this content.", responseCaptor.getValue().getMessage());
+    }
+
+    @Test
+    void createReportDatabaseAccessExceptionSendsDatabaseErrorResponse() {
+        SubmitReportRequest request = buildValidRequest();
+        when(reportRepository.save(any())).thenThrow(new DataAccessException("db unavailable") { });
+        ArgumentCaptor<ReportResponse> responseCaptor = ArgumentCaptor.forClass(ReportResponse.class);
+
+        reportGrpcService.submitReport(request, responseObserver);
+
+        verify(responseObserver).onNext(responseCaptor.capture());
+        assertFalse(responseCaptor.getValue().getSuccess());
+        assertTrue(responseCaptor.getValue().getMessage().contains("database error"));
+        verify(responseObserver).onCompleted();
+    }
+
+    @Test
     void createReportEmptyReporterIdSendsErrorResponse() {
         SubmitReportRequest request = SubmitReportRequest.newBuilder()
                 .setReporterId("")
@@ -119,15 +170,24 @@ class ReportGrpcServiceTest {
         report2.setReason("Harassment");
         report2.setStatus("PENDING");
         report2.setReportedAt(FIXED_INSTANT);
+        report2.setDescription("Details");
+        report2.setModeratorId("admin-1");
+        report2.setResolutionNotes("Handled");
+        report2.setResolvedAt(FIXED_INSTANT.toEpochMilli());
 
         List<Report> mockReports = Arrays.asList(report1, report2);
         when(reportRepository.findByStatus("PENDING")).thenReturn(mockReports);
 
         StreamObserver<ReportDetails> listResponseObserver = mock(StreamObserver.class);
+        ArgumentCaptor<ReportDetails> detailsCaptor = ArgumentCaptor.forClass(ReportDetails.class);
 
         reportGrpcService.listReportsByStatus(request, listResponseObserver);
 
-        verify(listResponseObserver, times(2)).onNext(any(ReportDetails.class));
+        verify(listResponseObserver, times(2)).onNext(detailsCaptor.capture());
+        assertEquals("", detailsCaptor.getAllValues().get(0).getDescription());
+        assertEquals("Details", detailsCaptor.getAllValues().get(1).getDescription());
+        assertEquals("admin-1", detailsCaptor.getAllValues().get(1).getModeratorId());
+        assertEquals("Handled", detailsCaptor.getAllValues().get(1).getResolutionNotes());
         verify(listResponseObserver, times(1)).onCompleted();
     }
 
@@ -191,6 +251,88 @@ class ReportGrpcServiceTest {
 
         verify(updateResponseObserver).onNext(responseCaptor.capture());
         assertTrue(responseCaptor.getValue().getSuccess());
+        verify(updateResponseObserver).onCompleted();
+    }
+
+    @Test
+    void updateReportStatusDismissedRequestUpdatesAndReturnsSuccess() {
+        UpdateReportStatusRequest request = UpdateReportStatusRequest.newBuilder()
+                .setReportId("report-456")
+                .setNewStatus("DISMISSED")
+                .setModeratorId("admin-2")
+                .build();
+
+        Report existingReport = new Report();
+        existingReport.setId("report-456");
+        existingReport.setStatus("PENDING");
+        when(reportRepository.findById("report-456")).thenReturn(Optional.of(existingReport));
+
+        StreamObserver<ReportActionResponse> updateResponseObserver = mock(StreamObserver.class);
+
+        reportGrpcService.updateReportStatus(request, updateResponseObserver);
+
+        verify(reportRepository).save(argThat(report -> "DISMISSED".equals(report.getStatus())));
+        verify(updateResponseObserver).onNext(argThat(ReportActionResponse::getSuccess));
+        verify(updateResponseObserver).onCompleted();
+    }
+
+    @Test
+    void updateReportStatusWhenRequiredFieldsAreMissingShouldReturnValidationError() {
+        StreamObserver<ReportActionResponse> updateResponseObserver = mock(StreamObserver.class);
+
+        reportGrpcService.updateReportStatus(UpdateReportStatusRequest.newBuilder()
+                .setNewStatus("RESOLVED")
+                .setModeratorId("admin-1")
+                .build(), updateResponseObserver);
+        reportGrpcService.updateReportStatus(UpdateReportStatusRequest.newBuilder()
+                .setReportId("report-1")
+                .setModeratorId("admin-1")
+                .build(), updateResponseObserver);
+        reportGrpcService.updateReportStatus(UpdateReportStatusRequest.newBuilder()
+                .setReportId("report-1")
+                .setNewStatus("RESOLVED")
+                .build(), updateResponseObserver);
+
+        verify(reportRepository, never()).findById(anyString());
+        verify(updateResponseObserver, times(3)).onNext(argThat(response -> !response.getSuccess()));
+        verify(updateResponseObserver, times(3)).onCompleted();
+    }
+
+    @Test
+    void updateReportStatusDataAccessExceptionReturnsDatabaseError() {
+        UpdateReportStatusRequest request = UpdateReportStatusRequest.newBuilder()
+                .setReportId("report-789")
+                .setNewStatus("RESOLVED")
+                .setModeratorId("admin-1")
+                .build();
+        when(reportRepository.findById("report-789")).thenThrow(new DataAccessException("db down") { });
+        StreamObserver<ReportActionResponse> updateResponseObserver = mock(StreamObserver.class);
+        ArgumentCaptor<ReportActionResponse> responseCaptor = ArgumentCaptor.forClass(ReportActionResponse.class);
+
+        reportGrpcService.updateReportStatus(request, updateResponseObserver);
+
+        verify(updateResponseObserver).onNext(responseCaptor.capture());
+        assertFalse(responseCaptor.getValue().getSuccess());
+        assertEquals("A database error occurred while updating the report.", responseCaptor.getValue().getMessage());
+        verify(updateResponseObserver).onCompleted();
+    }
+
+    @Test
+    void updateReportStatusUnexpectedExceptionReturnsInternalError() {
+        UpdateReportStatusRequest request = UpdateReportStatusRequest.newBuilder()
+                .setReportId("report-999")
+                .setNewStatus("RESOLVED")
+                .setModeratorId("admin-1")
+                .build();
+        when(reportRepository.findById("report-999")).thenThrow(new RuntimeException("boom"));
+        StreamObserver<ReportActionResponse> updateResponseObserver = mock(StreamObserver.class);
+        ArgumentCaptor<ReportActionResponse> responseCaptor = ArgumentCaptor.forClass(ReportActionResponse.class);
+
+        reportGrpcService.updateReportStatus(request, updateResponseObserver);
+
+        verify(updateResponseObserver).onNext(responseCaptor.capture());
+        assertFalse(responseCaptor.getValue().getSuccess());
+        assertEquals("An internal error occurred.", responseCaptor.getValue().getMessage());
         verify(updateResponseObserver).onCompleted();
     }
 

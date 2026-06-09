@@ -96,6 +96,31 @@ class CommentGrpcServiceTest {
     }
 
     @Test
+    void getCommentCountsWithOpenEndedDateRangesShouldStillAggregate() {
+        when(mongoTemplate.aggregate(
+                any(Aggregation.class),
+                eq("comments"),
+                eq(CommentGrpcService.CommentCountDocument.class)))
+                .thenReturn(new AggregationResults<>(List.of(), new Document()));
+
+        commentGrpcService.getCommentCounts(GetCommentCountsRequest.newBuilder()
+                .addReviewIds("review-1")
+                .setFrom(1000)
+                .build(), responseObserver);
+        commentGrpcService.getCommentCounts(GetCommentCountsRequest.newBuilder()
+                .addReviewIds("review-1")
+                .setTo(2000)
+                .build(), responseObserver);
+        commentGrpcService.getCommentCounts(GetCommentCountsRequest.newBuilder()
+                .addReviewIds("review-1")
+                .build(), responseObserver);
+
+        verify(responseObserver, times(3)).onNext(any(CommentCountsResponse.class));
+        verify(responseObserver, times(3)).onCompleted();
+        verify(mongoTemplate, times(3)).aggregate(any(Aggregation.class), eq("comments"), eq(CommentGrpcService.CommentCountDocument.class));
+    }
+
+    @Test
     void publishCommentShouldTrimContentSaveAndReturnCommentPayload() {
         Instant publishedAt = Instant.parse("2026-06-04T18:00:00Z");
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
@@ -120,6 +145,42 @@ class CommentGrpcServiceTest {
         assertEquals("Great review", observer.value.getContent());
         assertEquals(publishedAt.toEpochMilli(), observer.value.getPublishedAt());
         assertTrue(observer.completed);
+    }
+
+    @Test
+    void publishCommentWhenSavedCommentHasOptionalNullsShouldReturnResponseDefaults() {
+        when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
+            Comment comment = invocation.getArgument(0);
+            comment.setId(null);
+            comment.setGameId(null);
+            comment.setPublishedAt(null);
+            return comment;
+        });
+        CapturingObserver<CommentResponse> observer = new CapturingObserver<>();
+
+        commentGrpcService.publishComment(PublishCommentRequest.newBuilder()
+                .setUserId("user-1")
+                .setReviewId("review-1")
+                .setContent("Hello")
+                .build(), observer);
+
+        assertEquals("", observer.value.getCommentId());
+        assertEquals("", observer.value.getGameId());
+        assertEquals(0, observer.value.getPublishedAt());
+        assertTrue(observer.completed);
+    }
+
+    @Test
+    void publishCommentWhenRequiredFieldsAreMissingShouldReturnInvalidArgument() {
+        CapturingObserver<CommentResponse> observer = new CapturingObserver<>();
+
+        commentGrpcService.publishComment(PublishCommentRequest.newBuilder()
+                .setUserId("user-1")
+                .setContent("Missing review")
+                .build(), observer);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+        verify(commentRepository, never()).save(any());
     }
 
     @Test
@@ -186,6 +247,60 @@ class CommentGrpcServiceTest {
         verify(commentRepository).delete(comment);
         assertTrue(observer.value.getSuccess());
         assertTrue(observer.completed);
+    }
+
+    @Test
+    void deleteCommentWhenRequesterIsAdminShouldDeleteEvenWhenNotOwner() {
+        Comment comment = Comment.builder()
+                .id("comment-1")
+                .userId("owner-1")
+                .reviewId("review-1")
+                .content("Mine")
+                .publishedAt(Instant.parse("2026-06-04T18:00:00Z"))
+                .build();
+        when(commentRepository.findById("comment-1")).thenReturn(Optional.of(comment));
+        CapturingObserver<DeleteResponse> observer = new CapturingObserver<>();
+
+        commentGrpcService.deleteComment(DeleteCommentRequest.newBuilder()
+                .setCommentId("comment-1")
+                .setRequesterId("admin-1")
+                .setRequesterRole("ADMIN")
+                .build(), observer);
+
+        verify(commentRepository).delete(comment);
+        assertTrue(observer.value.getSuccess());
+        assertTrue(observer.completed);
+    }
+
+    @Test
+    void deleteCommentWhenCommentDoesNotExistShouldReturnNotFound() {
+        when(commentRepository.findById("missing")).thenReturn(Optional.empty());
+        CapturingObserver<DeleteResponse> observer = new CapturingObserver<>();
+
+        commentGrpcService.deleteComment(DeleteCommentRequest.newBuilder()
+                .setCommentId("missing")
+                .setRequesterId("user-1")
+                .build(), observer);
+
+        assertEquals(Status.Code.NOT_FOUND, observer.error.getStatus().getCode());
+        verify(commentRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteCommentWhenRequiredFieldsAreMissingShouldReturnInvalidArgument() {
+        CapturingObserver<DeleteResponse> missingCommentObserver = new CapturingObserver<>();
+        CapturingObserver<DeleteResponse> missingRequesterObserver = new CapturingObserver<>();
+
+        commentGrpcService.deleteComment(DeleteCommentRequest.newBuilder()
+                .setRequesterId("user-1")
+                .build(), missingCommentObserver);
+        commentGrpcService.deleteComment(DeleteCommentRequest.newBuilder()
+                .setCommentId("comment-1")
+                .build(), missingRequesterObserver);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, missingCommentObserver.error.getStatus().getCode());
+        assertEquals(Status.Code.INVALID_ARGUMENT, missingRequesterObserver.error.getStatus().getCode());
+        verify(commentRepository, never()).findById(anyString());
     }
 
     @Test

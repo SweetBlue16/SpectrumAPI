@@ -153,6 +153,119 @@ namespace Spectrum.Tests.UnitTests.Services
             Assert.Equal("like", result.MyVote);
         }
 
+        [Theory]
+        [InlineData(0, 8, "Title", "Content")]
+        [InlineData(123, 4, "Title", "Content")]
+        [InlineData(123, 11, "Title", "Content")]
+        [InlineData(123, 8, "", "Content")]
+        [InlineData(123, 8, "Title", "")]
+        public async Task CreateAsyncWhenRequiredReviewDataIsInvalidShouldThrowBusinessException(
+            int gameId,
+            int rating,
+            string title,
+            string content)
+        {
+            var dto = new CreateReviewDto
+            {
+                GameId = gameId,
+                Rating = rating,
+                Title = title,
+                Content = content
+            };
+
+            await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _reviewService.CreateAsync(dto, Guid.NewGuid()));
+
+            _reviewRepositoryMock.Verify(
+                repository => repository.AddAsync(It.IsAny<Review>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Theory]
+        [InlineData("https://cdn.test/review.png", null)]
+        [InlineData(null, "image/png")]
+        [InlineData("https://cdn.test/review.png", "application/pdf")]
+        public async Task CreateAsyncWhenAttachmentDataIsIncompleteOrUnsupportedShouldThrow(
+            string? imageUrl,
+            string? mediaType)
+        {
+            var dto = new CreateReviewDto
+            {
+                GameId = 123,
+                Rating = 8,
+                Title = "Title",
+                Content = "Content",
+                ImageUrl = imageUrl,
+                MediaType = mediaType
+            };
+
+            await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _reviewService.CreateAsync(dto, Guid.NewGuid()));
+        }
+
+        [Fact]
+        public async Task CreateAsyncWhenDataIsValidShouldPersistAndMapDefaults()
+        {
+            var userId = Guid.NewGuid();
+            var dto = new CreateReviewDto
+            {
+                GameId = 123,
+                Rating = 8,
+                Title = "  Great game  ",
+                Content = "  Loved it  ",
+                ImageUrl = "https://cdn.test/review.png",
+                MediaType = "image"
+            };
+            _reviewRepositoryMock
+                .Setup(repository => repository.AddAsync(It.IsAny<Review>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((Review review, CancellationToken _) => review);
+
+            var result = await _reviewService.CreateAsync(dto, userId);
+
+            Assert.Equal("Great game", result.Title);
+            Assert.Equal("Loved it", result.Content);
+            Assert.Equal("image", result.AttachmentType);
+            Assert.Equal("Usuario Spectrum", result.Username);
+            _reviewRepositoryMock.Verify(
+                repository => repository.AddAsync(
+                    It.Is<Review>(review => review.UserId == userId && review.MediaType == "image"),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteAsyncWhenAdminReasonIsInvalidShouldThrow()
+        {
+            var adminId = Guid.NewGuid();
+            var review = CreateReview(Guid.NewGuid());
+            _reviewRepositoryMock
+                .Setup(repository => repository.GetByIdAsync(review.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(review);
+
+            await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _reviewService.DeleteAsync(review.Id, adminId, isAdmin: true, deletionReason: "short"));
+        }
+
+        [Fact]
+        public async Task DeleteAsyncWhenAdminReasonIsValidShouldRecordModerationMetadata()
+        {
+            var adminId = Guid.NewGuid();
+            var review = CreateReview(Guid.NewGuid());
+            _reviewRepositoryMock
+                .Setup(repository => repository.GetByIdAsync(review.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(review);
+
+            await _reviewService.DeleteAsync(
+                review.Id,
+                adminId,
+                isAdmin: true,
+                deletionReason: "  Clear moderation reason  ");
+
+            Assert.True(review.IsDeleted);
+            Assert.Equal(adminId, review.DeletedByAdminId);
+            Assert.Equal("Clear moderation reason", review.DeletionReason);
+        }
+
         private static Review CreateReview(Guid ownerId)
         {
             return new Review

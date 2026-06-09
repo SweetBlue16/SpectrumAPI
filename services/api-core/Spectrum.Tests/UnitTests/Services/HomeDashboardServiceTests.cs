@@ -145,6 +145,76 @@ namespace Spectrum.Tests.UnitTests.Services
             Assert.Equal("like", card.CurrentUserVote);
         }
 
+        [Fact]
+        public async Task GetDashboardAsyncWhenReviewReferencesMissingUserAndGameShouldUseFallbacks()
+        {
+            using var context = TestDbContextFactory.CreateContext();
+            var user = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = string.Empty,
+                Email = "fallback@spectrum.test",
+                ProfilePicture = null
+            };
+            var review = new Review
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                GameId = 404,
+                Rating = 7,
+                Title = "Unknown game",
+                Content = "Still worth discussing",
+                LikesCount = 1,
+                DislikesCount = 0,
+                CreatedAt = DateTime.UtcNow.Date.AddHours(8),
+                User = user
+            };
+            await context.Users.AddAsync(user);
+            await context.Reviews.AddAsync(review);
+            await context.SaveChangesAsync();
+
+            var gameRepository = new Mock<IGameRepository>();
+            gameRepository.Setup(repository => repository.GetAll()).Returns(Array.Empty<Game>());
+            gameRepository.Setup(repository => repository.GetById(404)).Returns((Game?)null);
+            var dropsService = new Mock<IDropsService>();
+            dropsService
+                .Setup(service => service.ListEventsAsync(It.IsAny<string>(), 1, 8, false, It.IsAny<CancellationToken>(), null))
+                .ReturnsAsync(new PagedResult<EventStatusDto> { Items = Array.Empty<EventStatusDto>(), Page = 1, PageSize = 8 });
+            var analytics = new Mock<ICommentAnalyticsService>();
+            analytics
+                .Setup(service => service.GetCommentCountsAsync(
+                    It.IsAny<IEnumerable<Guid>>(),
+                    It.IsAny<DateTime>(),
+                    It.IsAny<DateTime>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Dictionary<Guid, int>());
+            var voteService = new Mock<IVoteService>();
+            voteService
+                .Setup(service => service.GetCurrentReviewVotesAsync(
+                    It.IsAny<IEnumerable<Guid>>(),
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Dictionary<Guid, string>());
+
+            var service = new HomeDashboardService(
+                context,
+                gameRepository.Object,
+                dropsService.Object,
+                analytics.Object,
+                voteService.Object
+            );
+
+            var dashboard = await service.GetDashboardAsync(currentUserId: null, isAdmin: false, CancellationToken.None);
+
+            var card = Assert.Single(dashboard.PopularReviewsToday);
+            Assert.Equal(string.Empty, card.Username);
+            Assert.Equal(string.Empty, card.UserProfileImageUrl);
+            Assert.Equal("Game 404", card.GameTitle);
+            Assert.Equal(string.Empty, card.GameCoverUrl);
+            Assert.Equal(0, card.CommentsCount);
+            Assert.True(card.CanVote);
+        }
+
         private static Review CreateReview(Guid userId, int gameId, int likes, DateTime createdAt)
         {
             return new Review

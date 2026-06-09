@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+using System.Security.Claims;
 using Spectrum.API.Controllers;
 using Spectrum.API.Dtos.External;
+using Spectrum.API.Dtos.Reviews;
 using Spectrum.API.Models;
 using Spectrum.API.Services.External;
 using Spectrum.API.Utilities;
@@ -93,6 +95,78 @@ namespace Spectrum.Tests.UnitTests.Controllers
             Assert.Equal(expectedGame.Title, returnedGame.Title);
 
             _gameServiceMock.Verify(s => s.GetGameDetailsAsync(gameId), Times.Once);
+        }
+
+        [Theory]
+        [InlineData("anonymous", false)]
+        [InlineData("nameid", false)]
+        [InlineData("sub", false)]
+        [InlineData("userId", true)]
+        [InlineData("invalid", false)]
+        public async Task GetReviewDetailShouldResolveCurrentUserAndAdminRole(string claimType, bool isAdmin)
+        {
+            var userId = Guid.NewGuid();
+            Guid? capturedUserId = Guid.Empty;
+            bool? capturedIsAdmin = null;
+            _gameServiceMock
+                .Setup(service => service.GetGameReviewDetailAsync(
+                    42,
+                    It.IsAny<Guid?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<CancellationToken>()))
+                .Callback<int, Guid?, bool, CancellationToken>((_, currentUserId, admin, _) =>
+                {
+                    capturedUserId = currentUserId;
+                    capturedIsAdmin = admin;
+                })
+                .ReturnsAsync(new GameReviewDetailDto());
+            var controller = new GamesController(_gameServiceMock.Object)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = BuildPrincipal(claimType, userId, isAdmin)
+                    }
+                }
+            };
+
+            var result = await controller.GetReviewDetail(42, CancellationToken.None);
+
+            Assert.IsType<OkObjectResult>(result);
+            Assert.Equal(isAdmin, capturedIsAdmin);
+            if (claimType is "anonymous" or "invalid")
+            {
+                Assert.Null(capturedUserId);
+            }
+            else
+            {
+                Assert.Equal(userId, capturedUserId);
+            }
+        }
+
+        private static ClaimsPrincipal BuildPrincipal(string claimType, Guid userId, bool isAdmin)
+        {
+            if (claimType == "anonymous")
+            {
+                return new ClaimsPrincipal(new ClaimsIdentity());
+            }
+
+            var claims = new List<Claim>();
+            var value = claimType == "invalid" ? "not-a-guid" : userId.ToString();
+            claims.Add(claimType switch
+            {
+                "sub" => new Claim("sub", value),
+                "userId" => new Claim("userId", value),
+                _ => new Claim(ClaimTypes.NameIdentifier, value)
+            });
+
+            if (isAdmin)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, Constants.Roles.Admin));
+            }
+
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
         }
     }
 }

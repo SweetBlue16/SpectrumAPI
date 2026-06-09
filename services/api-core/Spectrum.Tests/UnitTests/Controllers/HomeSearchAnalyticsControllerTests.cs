@@ -1,6 +1,8 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+using System.Security.Claims;
 using Spectrum.API.Controllers;
 using Spectrum.API.Dtos.Analytics;
 using Spectrum.API.Dtos.Home;
@@ -8,6 +10,7 @@ using Spectrum.API.Dtos.Search;
 using Spectrum.API.Services.Analytics;
 using Spectrum.API.Services.Home;
 using Spectrum.API.Services.Search;
+using Spectrum.API.Utilities;
 
 namespace Spectrum.Tests.UnitTests.Controllers
 {
@@ -35,6 +38,49 @@ namespace Spectrum.Tests.UnitTests.Controllers
             dto.BannerTitle.Should().Be("SPECTRUM");
             dto.RecentGames.Should().HaveCount(1);
             dto.PopularReviewsToday.Should().HaveCount(1);
+        }
+
+        [Theory]
+        [InlineData("nameid")]
+        [InlineData("sub")]
+        [InlineData("userId")]
+        [InlineData("invalid")]
+        public async Task HomeDashboardShouldResolveUserClaimsAndAdminRole(string claimType)
+        {
+            var expectedUserId = Guid.NewGuid();
+            Guid? capturedUserId = null;
+            bool? capturedIsAdmin = null;
+            var serviceMock = new Mock<IHomeDashboardService>();
+            serviceMock
+                .Setup(service => service.GetDashboardAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                .Callback<Guid?, bool, CancellationToken>((userId, isAdmin, _) =>
+                {
+                    capturedUserId = userId;
+                    capturedIsAdmin = isAdmin;
+                })
+                .ReturnsAsync(new HomeDashboardDto());
+            var controller = new HomeController(serviceMock.Object)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = BuildPrincipal(claimType, expectedUserId, includeAdminRole: true)
+                    }
+                }
+            };
+
+            await controller.GetDashboard(CancellationToken.None);
+
+            capturedIsAdmin.Should().BeTrue();
+            if (claimType == "invalid")
+            {
+                capturedUserId.Should().BeNull();
+            }
+            else
+            {
+                capturedUserId.Should().Be(expectedUserId);
+            }
         }
 
         [Fact]
@@ -81,6 +127,49 @@ namespace Spectrum.Tests.UnitTests.Controllers
             dto.BestOfWeek.Should().ContainSingle();
         }
 
+        [Theory]
+        [InlineData("nameid")]
+        [InlineData("sub")]
+        [InlineData("userId")]
+        [InlineData("invalid")]
+        public async Task TrendsEndpointsShouldResolveUserClaims(string claimType)
+        {
+            var expectedUserId = Guid.NewGuid();
+            var capturedIds = new List<Guid?>();
+            var serviceMock = new Mock<IAnalyticsService>();
+            serviceMock
+                .Setup(service => service.GetWeeklyTrendsAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                .Callback<Guid?, CancellationToken>((userId, _) => capturedIds.Add(userId))
+                .ReturnsAsync(new WeeklyTrendsDto());
+            serviceMock
+                .Setup(service => service.GetTrendsDashboardAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                .Callback<Guid?, CancellationToken>((userId, _) => capturedIds.Add(userId))
+                .ReturnsAsync(new TrendsDashboardDto());
+            var controller = new TrendsController(serviceMock.Object)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = BuildPrincipal(claimType, expectedUserId, includeAdminRole: false)
+                    }
+                }
+            };
+
+            await controller.GetWeekly(CancellationToken.None);
+            await controller.GetDashboard(CancellationToken.None);
+
+            capturedIds.Should().HaveCount(2);
+            if (claimType == "invalid")
+            {
+                capturedIds.Should().OnlyContain(id => id == null);
+            }
+            else
+            {
+                capturedIds.Should().OnlyContain(id => id == expectedUserId);
+            }
+        }
+
         [Fact]
         public async Task TestCryptDashboardShouldReturnWorstAndInactiveGames()
         {
@@ -101,6 +190,25 @@ namespace Spectrum.Tests.UnitTests.Controllers
             var dto = ok.Value.Should().BeOfType<CryptDashboardDto>().Subject;
             dto.WorstGames.Should().ContainSingle();
             dto.GamesWithoutReviews.Should().ContainSingle();
+        }
+
+        private static ClaimsPrincipal BuildPrincipal(string claimType, Guid userId, bool includeAdminRole)
+        {
+            var claims = new List<Claim>();
+            var value = claimType == "invalid" ? "not-a-guid" : userId.ToString();
+            claims.Add(claimType switch
+            {
+                "sub" => new Claim("sub", value),
+                "userId" => new Claim("userId", value),
+                _ => new Claim(ClaimTypes.NameIdentifier, value)
+            });
+
+            if (includeAdminRole)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, Constants.Roles.Admin));
+            }
+
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
         }
     }
 }

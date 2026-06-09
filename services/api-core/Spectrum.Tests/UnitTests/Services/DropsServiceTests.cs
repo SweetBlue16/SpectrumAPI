@@ -228,6 +228,135 @@ namespace Spectrum.Tests.UnitTests.Services
         }
 
         [Fact]
+        public async Task GetEventStatusAsyncWhenJavaServiceReturnsNotFoundShouldThrowNotFound()
+        {
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(It.IsAny<GetEventRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = "missing",
+                    Status = "NOT_FOUND"
+                }));
+
+            await Assert.ThrowsAsync<SpectrumNotFoundException>(() =>
+                _dropService.GetEventStatusAsync("missing", false, CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task GetEventStatusAsyncShouldMapFallbacksAndWinnerDefaults()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(It.IsAny<GetEventRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = "event-fallback",
+                    Title = "Fallback Drop",
+                    Status = "FINISHED",
+                    StartAt = now,
+                    JoinDeadlineAt = now,
+                    RevealAt = now,
+                    EndDate = now,
+                    TotalSlots = 10,
+                    AvailableSlots = 4,
+                    RemainingSlots = 0,
+                    RawgGameId = 0,
+                    VisibleUntil = 0,
+                    WinnerUserId = "",
+                    WinnerUsername = "",
+                    FinishedAt = 0,
+                    RewardSentAt = 0,
+                    RewardDeliveryStatus = "",
+                    RewardCodesAvailable = 0,
+                    RewardCodesTotal = 0,
+                    KeysAvailable = 2,
+                    KeysTotal = 3,
+                    Winners =
+                    {
+                        new WinnerStatus
+                        {
+                            UserId = "winner-1",
+                            Username = "neo",
+                            ClaimedAt = 0,
+                            DeliveryStatus = ""
+                        }
+                    }
+                }));
+
+            var result = await _dropService.GetEventStatusAsync("event-fallback", false, CancellationToken.None);
+
+            Assert.Null(result.RawgGameId);
+            Assert.Equal(4, result.RemainingSlots);
+            Assert.Null(result.VisibleUntil);
+            Assert.Null(result.WinnerUserId);
+            Assert.Null(result.FinishedAt);
+            Assert.Null(result.RewardSentAt);
+            Assert.Equal("PENDING", result.RewardDeliveryStatus);
+            Assert.Equal(2, result.RewardCodesAvailable);
+            Assert.Equal(3, result.RewardCodesTotal);
+            Assert.Single(result.Winners);
+            Assert.Null(result.Winners[0].ClaimedAt);
+            Assert.Equal("PENDING", result.Winners[0].DeliveryStatus);
+        }
+
+        [Fact]
+        public async Task GetEventStatusAsyncShouldMapPositiveOptionalFieldsAndWinnerDelivery()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _grpcClientMock
+                .Setup(client => client.GetEventStatusAsync(It.IsAny<GetEventRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new EventStatusResponse
+                {
+                    EventId = "event-complete",
+                    Title = "Complete Drop",
+                    Status = "FINISHED",
+                    RawgGameId = 42,
+                    StartAt = now,
+                    JoinDeadlineAt = now + 1_000,
+                    RevealAt = now + 2_000,
+                    EndDate = now + 3_000,
+                    TotalSlots = 10,
+                    AvailableSlots = 1,
+                    RemainingSlots = 7,
+                    VisibleUntil = now + 4_000,
+                    WinnerUserId = "winner-1",
+                    WinnerUsername = "trinity",
+                    FinishedAt = now + 5_000,
+                    RewardSentAt = now + 6_000,
+                    RewardDeliveryStatus = "SENT",
+                    RewardCodesAvailable = 8,
+                    RewardCodesTotal = 9,
+                    KeysAvailable = 2,
+                    KeysTotal = 3,
+                    Winners =
+                    {
+                        new WinnerStatus
+                        {
+                            UserId = "winner-1",
+                            Username = "trinity",
+                            ClaimedAt = now + 7_000,
+                            DeliveryStatus = "SENT"
+                        }
+                    }
+                }));
+
+            var result = await _dropService.GetEventStatusAsync("event-complete", false, CancellationToken.None);
+
+            Assert.Equal(42, result.RawgGameId);
+            Assert.Equal(7, result.RemainingSlots);
+            Assert.NotNull(result.VisibleUntil);
+            Assert.Equal("winner-1", result.WinnerUserId);
+            Assert.Equal("trinity", result.WinnerUsername);
+            Assert.NotNull(result.FinishedAt);
+            Assert.NotNull(result.RewardSentAt);
+            Assert.Equal("SENT", result.RewardDeliveryStatus);
+            Assert.Equal(8, result.RewardCodesAvailable);
+            Assert.Equal(9, result.RewardCodesTotal);
+            Assert.NotNull(result.Winners[0].ClaimedAt);
+            Assert.Equal("SENT", result.Winners[0].DeliveryStatus);
+        }
+
+        [Fact]
         public async Task ClaimAccessKeyAsyncWhenJavaServiceReturnsFailureShouldReturnFailedResult()
         {
             var userId = Guid.NewGuid();
@@ -253,6 +382,24 @@ namespace Spectrum.Tests.UnitTests.Services
 
             Assert.False(result.Success);
             Assert.Equal("Challenge could not be claimed.", result.Message);
+        }
+
+        [Fact]
+        public async Task ClaimAccessKeyAsyncWhenUserIsMissingShouldThrowNotFoundBeforeGrpc()
+        {
+            var userId = Guid.NewGuid();
+            _userRepositoryMock
+                .Setup(repository => repository.GetUserByIdAsync(userId))
+                .ReturnsAsync((User?)null);
+
+            await Assert.ThrowsAsync<SpectrumNotFoundException>(() =>
+                _dropService.ClaimAccessKeyAsync(userId, "event-123", new ClaimDropDto(), CancellationToken.None));
+
+            _grpcClientMock.Verify(client => client.ClaimAccessKeyAsync(
+                It.IsAny<ClaimKeyRequest>(),
+                null,
+                null,
+                It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -297,6 +444,61 @@ namespace Spectrum.Tests.UnitTests.Services
 
             await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
                 _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+        }
+
+        [Theory]
+        [InlineData("", "Halo", "PC", 10, "missing")]
+        [InlineData("Launch", "", "PC", 10, "missing")]
+        [InlineData("Launch", "Halo", "", 10, "missing")]
+        [InlineData("Launch", "Halo", "PC", 0, "totalSlotsInvalid")]
+        public async Task CreateEventAsyncWhenRequiredFieldsAreInvalidShouldRejectEvent(
+            string title,
+            string gameTitle,
+            string platform,
+            int totalSlots,
+            string expectedMessagePart)
+        {
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = title,
+                GameTitle = gameTitle,
+                Platform = platform,
+                StartAt = now.AddHours(1),
+                JoinDeadlineAt = now.AddHours(2),
+                RevealAt = now.AddHours(3),
+                EndAt = now.AddHours(4),
+                TotalSlots = totalSlots,
+                AccessKeys = ["DHA3-SDFE-32EF-SF5R"]
+            };
+
+            var exception = await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+
+            Assert.Contains(expectedMessagePart, exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task CreateEventAsyncWhenRewardCodesAreMissingShouldRejectEvent()
+        {
+            var now = DateTime.UtcNow;
+            var dto = new CreateDropEventDto
+            {
+                Title = "Launch",
+                GameTitle = "Halo",
+                Platform = "PC",
+                StartAt = now.AddHours(1),
+                JoinDeadlineAt = now.AddHours(2),
+                RevealAt = now.AddHours(3),
+                EndAt = now.AddHours(4),
+                TotalSlots = 10,
+                AccessKeys = []
+            };
+
+            var exception = await Assert.ThrowsAsync<SpectrumBusinessException>(() =>
+                _dropService.CreateEventAsync(dto, Guid.NewGuid(), CancellationToken.None));
+
+            Assert.Equal("rewardCodesRequired", exception.Message);
         }
 
         [Fact]
@@ -465,6 +667,18 @@ namespace Spectrum.Tests.UnitTests.Services
 
             Assert.Single(result);
             Assert.Equal(string.Empty, result[0].AccessKeyCode);
+        }
+
+        [Fact]
+        public async Task GetUserWonKeysAsyncWhenGrpcFailsShouldReturnEmptyCollection()
+        {
+            _grpcClientMock
+                .Setup(client => client.GetWonKeysAsync(It.IsAny<WonKeysRequest>(), null, null, It.IsAny<CancellationToken>()))
+                .Throws(new RpcException(new Status(StatusCode.Unavailable, "down")));
+
+            var result = await _dropService.GetUserWonKeysAsync(Guid.NewGuid(), CancellationToken.None);
+
+            Assert.Empty(result);
         }
 
         private static AsyncUnaryCall<TResponse> CreateAsyncUnaryCall<TResponse>(TResponse response)

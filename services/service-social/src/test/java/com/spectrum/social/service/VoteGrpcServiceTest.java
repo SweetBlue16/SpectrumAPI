@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VoteGrpcServiceTest {
@@ -79,6 +81,43 @@ class VoteGrpcServiceTest {
     }
 
     @Test
+    void castVoteWhenRequiredFieldsAreMissingShouldReturnInvalidArgumentWithoutCallingApplicationService() {
+        VoteApplicationService applicationService = mock(VoteApplicationService.class);
+        VoteGrpcService grpcService = new VoteGrpcService(applicationService);
+
+        CapturingObserver<VoteResponse> observer = new CapturingObserver<>();
+        grpcService.castVote(CastVoteRequest.newBuilder()
+                .setTargetId("review-1")
+                .setTargetType("REVIEW")
+                .build(), observer);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+        verify(applicationService, never()).castVote(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void castVoteWhenApplicationServiceThrowsShouldReturnInternalError() {
+        VoteApplicationService applicationService = mock(VoteApplicationService.class);
+        VoteGrpcService grpcService = new VoteGrpcService(applicationService);
+        when(applicationService.castVote("user-1", "review-1", "REVIEW", false))
+                .thenThrow(new RuntimeException("mongo down"));
+
+        CapturingObserver<VoteResponse> observer = new CapturingObserver<>();
+        grpcService.castVote(CastVoteRequest.newBuilder()
+                .setUserId("user-1")
+                .setTargetId("review-1")
+                .setTargetType("REVIEW")
+                .setIsPositive(false)
+                .build(), observer);
+
+        assertEquals(Status.Code.INTERNAL, observer.error.getStatus().getCode());
+    }
+
+    @Test
     void getUserVotesWhenRequiredFieldsAreMissingShouldReturnInvalidArgument() {
         VoteGrpcService grpcService = new VoteGrpcService(mock(VoteApplicationService.class));
 
@@ -88,6 +127,37 @@ class VoteGrpcServiceTest {
                 .build(), observer);
 
         assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+    }
+
+    @Test
+    void getUserVotesWhenTargetTypeIsUnsupportedShouldReturnInvalidArgument() {
+        VoteGrpcService grpcService = new VoteGrpcService(mock(VoteApplicationService.class));
+
+        CapturingObserver<GetUserVotesResponse> observer = new CapturingObserver<>();
+        grpcService.getUserVotes(GetUserVotesRequest.newBuilder()
+                .setUserId("user-1")
+                .setTargetType("CLIP")
+                .addTargetIds("clip-1")
+                .build(), observer);
+
+        assertEquals(Status.Code.INVALID_ARGUMENT, observer.error.getStatus().getCode());
+    }
+
+    @Test
+    void getUserVotesWhenApplicationServiceThrowsShouldReturnInternalError() {
+        VoteApplicationService applicationService = mock(VoteApplicationService.class);
+        VoteGrpcService grpcService = new VoteGrpcService(applicationService);
+        when(applicationService.getUserVotes("user-1", "REVIEW", List.of("review-1")))
+                .thenThrow(new RuntimeException("mongo down"));
+
+        CapturingObserver<GetUserVotesResponse> observer = new CapturingObserver<>();
+        grpcService.getUserVotes(GetUserVotesRequest.newBuilder()
+                .setUserId("user-1")
+                .setTargetType("REVIEW")
+                .addTargetIds("review-1")
+                .build(), observer);
+
+        assertEquals(Status.Code.INTERNAL, observer.error.getStatus().getCode());
     }
 
     private static class CapturingObserver<T> implements StreamObserver<T> {

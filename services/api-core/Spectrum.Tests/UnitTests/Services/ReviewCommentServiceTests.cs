@@ -70,6 +70,49 @@ namespace Spectrum.Tests.UnitTests.Services
             Assert.True(result.CanDelete);
         }
 
+        [Fact]
+        public async Task CreateAsyncWhenGrpcOmitsResponseFieldsShouldUseFallbackRequestValues()
+        {
+            var userId = Guid.NewGuid();
+            var reviewId = Guid.NewGuid();
+            _reviewRepositoryMock
+                .Setup(repository => repository.GetByIdAsync(reviewId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Review { Id = reviewId, GameId = 10 });
+            _commentClientMock
+                .Setup(client => client.PublishCommentAsync(
+                    It.IsAny<PublishCommentRequest>(),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateAsyncUnaryCall(new CommentResponse
+                {
+                    CommentId = "comment-fallback",
+                    UserId = "bad-user",
+                    ReviewId = "bad-review",
+                    Content = " ",
+                    PublishedAt = 0
+                }));
+            _userRepositoryMock
+                .Setup(repository => repository.GetPublicUsersByIdsAsync(
+                    It.IsAny<IEnumerable<Guid>>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Dictionary<Guid, PublicUserSummaryDto>());
+            var service = CreateService();
+
+            var result = await service.CreateAsync(
+                reviewId,
+                new CreateReviewCommentDto { Content = "  fallback content  " },
+                userId,
+                CancellationToken.None);
+
+            Assert.Equal("comment-fallback", result.Id);
+            Assert.Equal(userId, result.UserId);
+            Assert.Equal(reviewId, result.ReviewId);
+            Assert.Equal("fallback content", result.Content);
+            Assert.True(result.PublishedAt > DateTime.UtcNow.AddMinutes(-1));
+            Assert.Equal("Usuario Spectrum", result.Username);
+        }
+
         [Theory]
         [InlineData("")]
         [InlineData("   ")]
@@ -128,6 +171,45 @@ namespace Spectrum.Tests.UnitTests.Services
             var comment = Assert.Single(result);
             Assert.Equal("Usuario Spectrum", comment.Username);
             Assert.False(comment.IsOwnComment);
+            Assert.True(comment.CanDelete);
+        }
+
+        [Fact]
+        public async Task GetByReviewAsyncWhenCurrentUserOwnsCommentShouldMarkOwnAndDeletable()
+        {
+            var reviewId = Guid.NewGuid();
+            var authorId = Guid.NewGuid();
+            _reviewRepositoryMock
+                .Setup(repository => repository.GetByIdAsync(reviewId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Review { Id = reviewId, GameId = 10 });
+            _commentClientMock
+                .Setup(client => client.GetCommentsByReview(
+                    It.IsAny<GetCommentsRequest>(),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Returns(CreateStreamingCall(new[]
+                {
+                    new CommentResponse
+                    {
+                        CommentId = "comment-owned",
+                        UserId = authorId.ToString(),
+                        ReviewId = reviewId.ToString(),
+                        Content = "Owned comment",
+                        PublishedAt = 1_700_000_000_000
+                    }
+                }));
+            _userRepositoryMock
+                .Setup(repository => repository.GetPublicUsersByIdsAsync(
+                    It.IsAny<IEnumerable<Guid>>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Dictionary<Guid, PublicUserSummaryDto>());
+            var service = CreateService();
+
+            var result = await service.GetByReviewAsync(reviewId, currentUserId: authorId, isAdmin: false, page: 1);
+
+            var comment = Assert.Single(result);
+            Assert.True(comment.IsOwnComment);
             Assert.True(comment.CanDelete);
         }
 
@@ -191,6 +273,28 @@ namespace Spectrum.Tests.UnitTests.Services
                 service.CreateAsync(reviewId, new CreateReviewCommentDto { Content = "Valid comment" }, Guid.NewGuid()));
 
             Assert.Equal("comment rejected", exception.Message);
+        }
+
+        [Theory]
+        [InlineData(StatusCode.NotFound, typeof(SpectrumNotFoundException))]
+        [InlineData(StatusCode.PermissionDenied, typeof(SpectrumForbiddenException))]
+        [InlineData(StatusCode.Unavailable, typeof(SpectrumServiceUnavailableException))]
+        [InlineData(StatusCode.Unknown, typeof(SpectrumServiceUnavailableException))]
+        public async Task DeleteAsyncWhenGrpcFailsShouldMapKnownStatusCodes(StatusCode statusCode, Type expectedExceptionType)
+        {
+            _commentClientMock
+                .Setup(client => client.DeleteCommentAsync(
+                    It.IsAny<DeleteCommentRequest>(),
+                    null,
+                    null,
+                    It.IsAny<CancellationToken>()))
+                .Throws(new RpcException(new Status(statusCode, "grpc failed")));
+            var service = CreateService();
+
+            var exception = await Assert.ThrowsAsync(expectedExceptionType, () =>
+                service.DeleteAsync("comment-1", Guid.NewGuid(), isAdmin: false));
+
+            Assert.NotNull(exception);
         }
 
         private ReviewCommentService CreateService()

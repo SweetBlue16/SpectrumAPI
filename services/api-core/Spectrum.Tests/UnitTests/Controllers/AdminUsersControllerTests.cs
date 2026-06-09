@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Spectrum.API.Controllers;
 using Spectrum.API.Dtos.Profile;
@@ -68,6 +70,46 @@ namespace Spectrum.Tests.UnitTests.Controllers
             var okResult = Assert.IsType<OkObjectResult>(result);
             var returnedResult = Assert.IsType<PagedResult<UserModerationDto>>(okResult.Value);
             Assert.Equal(expectedPagedResult.TotalCount, returnedResult.TotalCount);
+        }
+
+        [Theory]
+        [InlineData("nameid")]
+        [InlineData("sub")]
+        [InlineData("invalid")]
+        public async Task SuspendUserShouldResolveRequesterFromSupportedClaims(string claimType)
+        {
+            var targetUserId = Guid.NewGuid();
+            var requesterId = Guid.NewGuid();
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = BuildPrincipal(claimType, requesterId)
+                }
+            };
+
+            await _controller.SuspendUser(
+                targetUserId,
+                new AdminModerationActionDto { Reason = "policy" },
+                CancellationToken.None);
+
+            var expectedRequesterId = claimType == "invalid" ? (Guid?)null : requesterId;
+            _moderationServiceMock.Verify(service => service.ToggleSuspensionAsync(
+                targetUserId,
+                true,
+                expectedRequesterId,
+                "policy",
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        private static ClaimsPrincipal BuildPrincipal(string claimType, Guid requesterId)
+        {
+            var value = claimType == "invalid" ? "bad-id" : requesterId.ToString();
+            var claim = claimType == "sub"
+                ? new Claim("sub", value)
+                : new Claim(ClaimTypes.NameIdentifier, value);
+
+            return new ClaimsPrincipal(new ClaimsIdentity([claim], "TestAuth"));
         }
     }
 }
