@@ -56,6 +56,14 @@ namespace Spectrum.API.Controllers
             return Ok(profile);
         }
 
+        /// <summary>
+        /// Retrieves the public profile information of a specific user.
+        /// Sensitive information such as email addresses is omitted from the response.
+        /// </summary>
+        /// <param name="userId">The unique identifier of the target user.</param>
+        /// <returns>A public-facing <see cref="UserProfileDto"/>.</returns>
+        /// <response code="200">Successfully retrieved the user's public profile.</response>
+        /// <response code="404">The requested user profile does not exist.</response>
         [HttpGet("users/{userId:guid}")]
         [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -65,6 +73,16 @@ namespace Spectrum.API.Controllers
             return Ok(profile);
         }
 
+        /// <summary>
+        /// Blocks another user, preventing future interactions according to platform moderation rules.
+        /// </summary>
+        /// <param name="userId">The unique identifier of the user to block.</param>
+        /// <param name="dto">Optional information describing the reason for the block.</param>
+        /// <returns>A 204 No Content response if the operation succeeds.</returns>
+        /// <response code="204">The user was successfully blocked.</response>
+        /// <response code="400">The request is invalid, such as attempting to block oneself.</response>
+        /// <response code="401">The current user is not authenticated.</response>
+        /// <response code="404">The specified user was not found.</response>
         [HttpPost("users/{userId:guid}/block")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -135,6 +153,15 @@ namespace Spectrum.API.Controllers
             return NoContent();
         }
 
+        /// <summary>
+        /// Generates and sends a verification code to the authenticated user's email address
+        /// to begin the password change process.
+        /// </summary>
+        /// <returns>
+        /// A confirmation message indicating that the verification code was dispatched.
+        /// </returns>
+        /// <response code="200">The verification code was successfully generated and sent.</response>
+        /// <response code="401">The user is not authenticated.</response>
         [HttpPost("me/password/change/request-code")]
         [EnableRateLimiting("SensitiveAuth")]
         [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
@@ -150,6 +177,15 @@ namespace Spectrum.API.Controllers
             return Ok(new MessageResponseDto { Message = "verificationCodeSent" });
         }
 
+        /// <summary>
+        /// Validates a password change verification code and issues a temporary verification token.
+        /// </summary>
+        /// <param name="verifyDto">The payload containing the verification code.</param>
+        /// <returns>
+        /// A verification token that can be used to complete the password change process.
+        /// </returns>
+        /// <response code="200">The verification code is valid.</response>
+        /// <response code="401">The user is not authenticated or the code is invalid.</response>
         [HttpPost("me/password/change/verify-code")]
         [EnableRateLimiting("SensitiveAuth")]
         [ProducesResponseType(typeof(PasswordCodeVerifiedDto), StatusCodes.Status200OK)]
@@ -169,6 +205,17 @@ namespace Spectrum.API.Controllers
             });
         }
 
+        /// <summary>
+        /// Completes the password change process using a previously issued verification token.
+        /// </summary>
+        /// <param name="confirmDto">
+        /// The payload containing the verification token and the new password.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating that the password was successfully updated.
+        /// </returns>
+        /// <response code="200">The password was successfully changed.</response>
+        /// <response code="401">The user is not authenticated or the verification token is invalid.</response>
         [HttpPost("me/password/change/confirm")]
         [EnableRateLimiting("SensitiveAuth")]
         [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
@@ -210,6 +257,16 @@ namespace Spectrum.API.Controllers
             return Ok(new { avatarUrl = newAvatarUrl });
         }
 
+        /// <summary>
+        /// Attempts to extract the authenticated user's identifier from the current security principal.
+        /// </summary>
+        /// <param name="userId">
+        /// When this method returns, contains the parsed user identifier if successful;
+        /// otherwise, contains <see cref="Guid.Empty"/>.
+        /// </param>
+        /// <returns>
+        /// <c>true</c> if a valid user identifier was found; otherwise, <c>false</c>.
+        /// </returns>
         private bool TryGetAuthenticatedUserId(out Guid userId)
         {
             var userIdClaim = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value

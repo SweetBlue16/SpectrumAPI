@@ -1,11 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Spectrum.API.Dtos.Media;
 using Spectrum.API.Services.Storage;
 using Spectrum.API.Services.Clips;
 using Spectrum.API.Dtos.Votes;
-using System.Threading.Tasks;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
@@ -55,6 +53,16 @@ namespace Spectrum.API.Controllers
             return Ok(new { url });
         }
 
+        /// <summary>
+        /// Uploads an attachment for a review, automatically determining whether it is an image or video.
+        /// Images are stored directly, while videos undergo validation and storage through the video pipeline.
+        /// </summary>
+        /// <param name="file">The media file to upload.</param>
+        /// <returns>
+        /// An object containing the public URL of the uploaded file and its detected media type.
+        /// </returns>
+        /// <response code="200">The attachment was successfully uploaded.</response>
+        /// <response code="400">The file format, size, or content type is invalid.</response>
         [HttpPost("reviews/attachment")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -173,6 +181,18 @@ namespace Spectrum.API.Controllers
             return NoContent();
         }
 
+        /// <summary>
+        /// Casts a positive or negative vote on a game clip.
+        /// </summary>
+        /// <param name="clipId">The unique identifier of the clip being voted on.</param>
+        /// <param name="request">The vote payload indicating whether the vote is positive or negative.</param>
+        /// <returns>
+        /// The updated voting result including current totals and user vote state.
+        /// </returns>
+        /// <response code="200">The vote was successfully registered.</response>
+        /// <response code="401">The user is not authenticated.</response>
+        /// <response code="403">The user is not allowed to vote on the specified clip.</response>
+        /// <response code="404">The requested clip does not exist.</response>
         [HttpPost("clips/{clipId}/vote")]
         [ProducesResponseType(typeof(VoteResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -188,6 +208,16 @@ namespace Spectrum.API.Controllers
             return Ok(await gameClipService.CastClipVoteAsync(clipId, userId, request.IsPositive));
         }
 
+        /// <summary>
+        /// Attempts to extract the authenticated user's identifier from the JWT claims collection.
+        /// </summary>
+        /// <param name="userId">
+        /// When this method returns, contains the parsed user identifier if extraction succeeded;
+        /// otherwise, contains <see cref="Guid.Empty"/>.
+        /// </param>
+        /// <returns>
+        /// <c>true</c> if a valid user identifier was found and parsed; otherwise, <c>false</c>.
+        /// </returns>
         private bool TryGetUserId(out Guid userId)
         {
             var userIdClaim = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value

@@ -22,6 +22,14 @@ namespace Spectrum.API.Services.Profile
         /// <returns>A <see cref="UserProfileDto"/> containing the user's profile data.</returns>
         Task<UserProfileDto> GetUserProfileAsync(Guid userId);
 
+        /// <summary>
+        /// Retrieves the public profile information of a user.
+        /// Sensitive information is removed before returning the result.
+        /// </summary>
+        /// <param name="userId">The unique identifier of the user.</param>
+        /// <returns>
+        /// A <see cref="UserProfileDto"/> containing only public profile information.
+        /// </returns>
         Task<UserProfileDto> GetPublicUserProfileAsync(Guid userId);
 
         /// <summary>
@@ -67,6 +75,12 @@ namespace Spectrum.API.Services.Profile
         /// <returns>The public URL of the newly uploaded profile picture.</returns>
         Task<string> UpdateAvatarAsync(Guid userId, IFormFile file);
 
+        /// <summary>
+        /// Creates a block relationship between two users.
+        /// </summary>
+        /// <param name="blockerUserId">The user initiating the block action.</param>
+        /// <param name="blockedUserId">The user being blocked.</param>
+        /// <param name="dto">Optional metadata describing the block reason.</param>
         Task BlockUserAsync(Guid blockerUserId, Guid blockedUserId, BlockUserDto dto);
     }
 
@@ -134,6 +148,7 @@ namespace Spectrum.API.Services.Profile
             };
         }
 
+        /// <inheritdoc />
         public async Task<UserProfileDto> GetPublicUserProfileAsync(Guid userId)
         {
             var profile = await GetUserProfileAsync(userId);
@@ -213,6 +228,7 @@ namespace Spectrum.API.Services.Profile
             await _userRepository.UpdateUserAsync(user);
         }
 
+        /// <inheritdoc />
         public async Task RequestPasswordChangeCodeAsync(Guid userId)
         {
             var user = await GetExistingUserAsync(userId);
@@ -225,6 +241,7 @@ namespace Spectrum.API.Services.Profile
             await _emailService.SendPasswordChangeAsync(user.Email, code);
         }
 
+        /// <inheritdoc />
         public async Task<string> VerifyPasswordChangeCodeAsync(Guid userId, VerifyPasswordChangeCodeDto verifyDto)
         {
             var user = await GetExistingUserAsync(userId);
@@ -236,6 +253,7 @@ namespace Spectrum.API.Services.Profile
             );
         }
 
+        /// <inheritdoc />
         public async Task ConfirmPasswordChangeAsync(Guid userId, ConfirmPasswordChangeDto confirmDto)
         {
             var user = await GetExistingUserAsync(userId);
@@ -264,6 +282,7 @@ namespace Spectrum.API.Services.Profile
             return avatarUrl;
         }
 
+        /// <inheritdoc />
         public async Task BlockUserAsync(Guid blockerUserId, Guid blockedUserId, BlockUserDto dto)
         {
             if (blockerUserId == blockedUserId)
@@ -300,6 +319,14 @@ namespace Spectrum.API.Services.Profile
             await _context.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// Retrieves an existing user entity by identifier or throws a not-found exception.
+        /// </summary>
+        /// <param name="userId">The unique identifier of the user.</param>
+        /// <returns>The matching <see cref="User"/> entity.</returns>
+        /// <exception cref="SpectrumNotFoundException">
+        /// Thrown when the specified user cannot be found.
+        /// </exception>
         private async Task<User> GetExistingUserAsync(Guid userId)
         {
             var user = await _userRepository.GetUserByIdAsync(userId);
@@ -310,6 +337,5 @@ namespace Spectrum.API.Services.Profile
 
             return user;
         }
-
     }
 }

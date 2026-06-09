@@ -1,11 +1,6 @@
 ﻿using Amazon.S3;
 using Amazon.S3.Model;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Spectrum.API.Utilities;
-using System;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace Spectrum.API.Services.Storage
 {
