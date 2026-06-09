@@ -7,16 +7,109 @@ using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Analytics
 {
+    /// <summary>
+    /// Provides analytical, trend, and reporting data for dashboards,
+    /// platform insights, and review activity metrics.
+    /// </summary>
     public interface IAnalyticsService
     {
+        /// <summary>
+        /// Calculates aggregated platform metrics for a specified reporting period.
+        /// </summary>
+        /// <param name="period">
+        /// Reporting period to evaluate.
+        /// </param>
+        /// <param name="anchorDate">
+        /// Optional reference date used to determine the reporting window.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A collection of platform-wide metrics.
+        /// </returns>
         Task<GlobalMetricsDto> GetGlobalMetricsAsync(string period, DateTime? anchorDate, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Retrieves weekly trend data based on review activity,
+        /// engagement, and game popularity.
+        /// </summary>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// Weekly trend information and featured content.
+        /// </returns>
         Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Builds the trends dashboard displayed to users,
+        /// including trending games and featured reviews.
+        /// </summary>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A populated trends dashboard model.
+        /// </returns>
         Task<TrendsDashboardDto> GetTrendsDashboardAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Retrieves engagement and platform statistics used by the Crypt dashboard.
+        /// </summary>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A dashboard containing platform activity metrics and statistics.
+        /// </returns>
         Task<CryptDashboardDto> GetCryptDashboardAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Retrieves a paginated collection of the most relevant weekly review clips.
+        /// </summary>
+        /// <param name="page">
+        /// Page number to retrieve.
+        /// </param>
+        /// <param name="pageSize">
+        /// Number of items per page.
+        /// </param>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A paginated collection of weekly review clips.
+        /// </returns>
         Task<PagedResult<WeeklyReviewDto>> GetWeeklyClipsAsync(int page, int pageSize, Guid? currentUserId = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Retrieves the highest-ranked review clips for the current month.
+        /// </summary>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A collection of the month's top review clips.
+        /// </returns>
         Task<IReadOnlyList<WeeklyReviewDto>> GetMonthlyTopClipsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default);
     }
 
+    /// <summary>
+    /// Generates platform analytics, trend reports, dashboard data,
+    /// and review engagement metrics from Spectrum activity data.
+    /// </summary>
     public class AnalyticsService : IAnalyticsService
     {
         private const int TopGamesLimit = 3;
@@ -28,6 +121,21 @@ namespace Spectrum.API.Services.Analytics
         private readonly ICommentAnalyticsService _commentAnalyticsService;
         private readonly IVoteService _voteService;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AnalyticsService"/> class.
+        /// </summary>
+        /// <param name="context">
+        /// Database context used to query analytics and engagement data.
+        /// </param>
+        /// <param name="gameRepository">
+        /// Repository used to retrieve game metadata.
+        /// </param>
+        /// <param name="commentAnalyticsService">
+        /// Service responsible for calculating review comment metrics.
+        /// </param>
+        /// <param name="voteService">
+        /// Service responsible for retrieving review voting information.
+        /// </param>
         public AnalyticsService(
             SpectrumDbContext context,
             IGameRepository gameRepository,
@@ -41,6 +149,7 @@ namespace Spectrum.API.Services.Analytics
             _voteService = voteService;
         }
 
+        /// <inheritdoc/>
         public async Task<GlobalMetricsDto> GetGlobalMetricsAsync(
             string period,
             DateTime? anchorDate,
@@ -78,6 +187,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
+        /// <inheritdoc/>
         public async Task<WeeklyTrendsDto> GetWeeklyTrendsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
             var window = ResolveWeeklyWindow(DateTime.UtcNow);
@@ -148,6 +258,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
+        /// <inheritdoc/>
         public async Task<TrendsDashboardDto> GetTrendsDashboardAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
             var week = ResolveWeeklyWindow(DateTime.UtcNow);
@@ -250,6 +361,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
+        /// <inheritdoc/>
         public async Task<CryptDashboardDto> GetCryptDashboardAsync(CancellationToken cancellationToken = default)
         {
             var month = ResolveWindow(PeriodMonth, DateTime.UtcNow);
@@ -286,7 +398,8 @@ namespace Spectrum.API.Services.Analytics
                     .ToList()
             };
         }
-
+        
+        /// <inheritdoc/>
         public async Task<PagedResult<WeeklyReviewDto>> GetWeeklyClipsAsync(
             int page,
             int pageSize,
@@ -353,6 +466,7 @@ namespace Spectrum.API.Services.Analytics
             };
         }
 
+        /// <inheritdoc/>
         public async Task<IReadOnlyList<WeeklyReviewDto>> GetMonthlyTopClipsAsync(Guid? currentUserId = null, CancellationToken cancellationToken = default)
         {
             var window = ResolveWindow(PeriodMonth, DateTime.UtcNow);
