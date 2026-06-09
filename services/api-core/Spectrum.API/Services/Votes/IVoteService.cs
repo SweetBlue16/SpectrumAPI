@@ -7,8 +7,24 @@ using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Votes
 {
+    /// <summary>
+    /// Defines the contract for casting and resolving votes associated with review entities.
+    /// Acts as an abstraction over the social microservice responsible for vote persistence.
+    /// </summary>
     public interface IVoteService
     {
+        /// <summary>
+        /// Casts or updates a vote for a specific review on behalf of an authenticated user.
+        /// </summary>
+        /// <param name="reviewId">The unique identifier of the target review.</param>
+        /// <param name="userId">The unique identifier of the user casting the vote.</param>
+        /// <param name="isPositive">
+        /// Indicates whether the vote is positive (<c>true</c>) or negative (<c>false</c>).
+        /// </param>
+        /// <param name="cancellationToken">The cancellation token controlling the asynchronous operation.</param>
+        /// <returns>
+        /// A <see cref="VoteResultDto"/> containing the updated vote counters and operation result.
+        /// </returns>
         Task<VoteResultDto> CastReviewVoteAsync(
             Guid reviewId,
             Guid userId,
@@ -19,6 +35,13 @@ namespace Spectrum.API.Services.Votes
         /// <summary>
         /// Resolves the authenticated user's active vote for a batch of reviews.
         /// </summary>
+        /// <param name="reviewIds">The collection of review identifiers to evaluate.</param>
+        /// <param name="userId">The unique identifier of the authenticated user.</param>
+        /// <param name="cancellationToken">The cancellation token controlling the asynchronous operation.</param>
+        /// <returns>
+        /// A dictionary where the key is the review identifier and the value is the vote type
+        /// (<c>like</c> or <c>dislike</c>).
+        /// </returns>
         Task<IReadOnlyDictionary<Guid, string>> GetCurrentReviewVotesAsync(
             IEnumerable<Guid> reviewIds,
             Guid? userId,
@@ -26,6 +49,11 @@ namespace Spectrum.API.Services.Votes
         );
     }
 
+    /// <summary>
+    /// gRPC-backed implementation of <see cref="IVoteService"/>.
+    /// Coordinates vote operations between the Spectrum API, the review repository,
+    /// and the social microservice responsible for vote management.
+    /// </summary>
     public class VoteServiceClient : IVoteService
     {
         private const string ReviewTargetType = "REVIEW";
@@ -35,6 +63,18 @@ namespace Spectrum.API.Services.Votes
         private readonly IReviewRepository _reviewRepository;
         private readonly ILogger<VoteServiceClient> _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="VoteServiceClient"/> class.
+        /// </summary>
+        /// <param name="voteServiceClient">
+        /// The gRPC client used to communicate with the social service vote endpoints.
+        /// </param>
+        /// <param name="reviewRepository">
+        /// The repository used to validate review existence and synchronize vote counters.
+        /// </param>
+        /// <param name="logger">
+        /// The logger used for vote operation diagnostics and gRPC failure tracking.
+        /// </param>
         public VoteServiceClient(
             VoteService.VoteServiceClient voteServiceClient,
             IReviewRepository reviewRepository,
@@ -46,6 +86,7 @@ namespace Spectrum.API.Services.Votes
             _logger = logger;
         }
 
+        /// <inheritdoc />
         public async Task<VoteResultDto> CastReviewVoteAsync(
             Guid reviewId,
             Guid userId,
@@ -120,6 +161,7 @@ namespace Spectrum.API.Services.Votes
             }
         }
 
+        /// <inheritdoc />
         public async Task<IReadOnlyDictionary<Guid, string>> GetCurrentReviewVotesAsync(
             IEnumerable<Guid> reviewIds,
             Guid? userId,

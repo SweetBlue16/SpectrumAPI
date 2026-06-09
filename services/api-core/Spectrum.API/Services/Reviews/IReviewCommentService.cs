@@ -9,8 +9,20 @@ using Spectrum.API.Utilities;
 
 namespace Spectrum.API.Services.Reviews
 {
+    /// <summary>
+    /// Defines the contract for managing review comments through the social microservice.
+    /// Provides operations for creating, retrieving, and deleting comments associated with reviews.
+    /// </summary>
     public interface IReviewCommentService
     {
+        /// <summary>
+        /// Creates a new comment for a specific review.
+        /// </summary>
+        /// <param name="reviewId">The unique identifier of the review being commented on.</param>
+        /// <param name="dto">The payload containing the comment content.</param>
+        /// <param name="userId">The unique identifier of the author creating the comment.</param>
+        /// <param name="cancellationToken">A token used to cancel the operation.</param>
+        /// <returns>The newly created review comment enriched with author metadata.</returns>
         Task<ReviewCommentResponseDto> CreateAsync(
             Guid reviewId,
             CreateReviewCommentDto dto,
@@ -18,6 +30,15 @@ namespace Spectrum.API.Services.Reviews
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Retrieves a paginated collection of comments associated with a review.
+        /// </summary>
+        /// <param name="reviewId">The unique identifier of the review.</param>
+        /// <param name="currentUserId">The authenticated user identifier, if available.</param>
+        /// <param name="isAdmin">Indicates whether the requester has administrative privileges.</param>
+        /// <param name="page">The page number to retrieve.</param>
+        /// <param name="cancellationToken">A token used to cancel the operation.</param>
+        /// <returns>A collection of review comments enriched with author information and permissions.</returns>
         Task<IReadOnlyList<ReviewCommentResponseDto>> GetByReviewAsync(
             Guid reviewId,
             Guid? currentUserId = null,
@@ -26,6 +47,13 @@ namespace Spectrum.API.Services.Reviews
             CancellationToken cancellationToken = default
         );
 
+        /// <summary>
+        /// Deletes an existing review comment.
+        /// </summary>
+        /// <param name="commentId">The identifier of the comment to remove.</param>
+        /// <param name="requesterId">The identifier of the user requesting the deletion.</param>
+        /// <param name="isAdmin">Indicates whether the requester has administrative privileges.</param>
+        /// <param name="cancellationToken">A token used to cancel the operation.</param>
         Task DeleteAsync(
             string commentId,
             Guid requesterId,
@@ -34,6 +62,11 @@ namespace Spectrum.API.Services.Reviews
         );
     }
 
+    /// <summary>
+    /// Service responsible for orchestrating review comment operations.
+    /// Integrates with the Social gRPC microservice for comment persistence
+    /// and enriches responses with Spectrum user profile information.
+    /// </summary>
     public class ReviewCommentService : IReviewCommentService
     {
         private const int MinimumPage = 1;
@@ -44,6 +77,13 @@ namespace Spectrum.API.Services.Reviews
         private readonly IUserRepository _userRepository;
         private readonly ILogger<ReviewCommentService> _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ReviewCommentService"/> class.
+        /// </summary>
+        /// <param name="commentServiceClient">The gRPC client used to communicate with the social service.</param>
+        /// <param name="reviewRepository">The repository used to validate review existence.</param>
+        /// <param name="userRepository">The repository used to enrich comments with author information.</param>
+        /// <param name="logger">The logger used for diagnostics and gRPC failure tracking.</param>
         public ReviewCommentService(
             CommentService.CommentServiceClient commentServiceClient,
             IReviewRepository reviewRepository,
@@ -57,6 +97,7 @@ namespace Spectrum.API.Services.Reviews
             _logger = logger;
         }
 
+        /// <inheritdoc/>
         public async Task<ReviewCommentResponseDto> CreateAsync(
             Guid reviewId,
             CreateReviewCommentDto dto,
@@ -104,6 +145,7 @@ namespace Spectrum.API.Services.Reviews
             }
         }
 
+        /// <inheritdoc/>
         public async Task<IReadOnlyList<ReviewCommentResponseDto>> GetByReviewAsync(
             Guid reviewId,
             Guid? currentUserId = null,
@@ -147,6 +189,7 @@ namespace Spectrum.API.Services.Reviews
             }
         }
 
+        /// <inheritdoc/>
         public async Task DeleteAsync(
             string commentId,
             Guid requesterId,
