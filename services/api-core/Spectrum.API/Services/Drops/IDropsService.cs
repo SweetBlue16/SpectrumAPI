@@ -8,17 +8,108 @@ using System.Text.RegularExpressions;
 
 namespace Spectrum.API.Services.Drops
 {
+    /// <summary>
+    /// Provides operations for managing drop events, participation,
+    /// reward claiming, and event lifecycle workflows.
+    /// </summary>
     public interface IDropsService
     {
+        /// <summary>
+        /// Creates a new drop event.
+        /// </summary>
+        /// <param name="dto">Configuration data for the event.</param>
+        /// <param name="adminId">Identifier of the administrator creating the event.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>The result of the create operation.</returns>
         Task<DropActionResultDto> CreateEventAsync(CreateDropEventDto dto, Guid adminId, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Updates an existing drop event.
+        /// </summary>
+        /// <param name="eventId">Identifier of the event to update.</param>
+        /// <param name="dto">Updated event configuration.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>The result of the update operation.</returns>
         Task<DropActionResultDto> UpdateEventAsync(string eventId, UpdateDropEventDto dto, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Registers a user as a participant in a drop event.
+        /// </summary>
+        /// <param name="userId">Identifier of the participating user.</param>
+        /// <param name="eventId">Identifier of the target event.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>The result of the participation request.</returns>
         Task<DropActionResultDto> JoinEventAsync(Guid userId, string eventId, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Attempts to claim a reward or access key from a completed drop event.
+        /// </summary>
+        /// <param name="userId">Identifier of the participating user.</param>
+        /// <param name="eventId">Identifier of the target event.</param>
+        /// <param name="dto">Claim request information.</param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <returns>The reward claim result.</returns>
         Task<ClaimDropResultDto> ClaimAccessKeyAsync(Guid userId, string eventId, ClaimDropDto dto, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Retrieves the current status and metadata of a drop event.
+        /// </summary>
+        /// <param name="eventId">Identifier of the target event.</param>
+        /// <param name="exposeChallengeCode">
+        /// Indicates whether administrative challenge information should be included.
+        /// </param>
+        /// <param name="cancellationToken">Token used to cancel the operation.</param>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <returns>The current event status.</returns>
         Task<EventStatusDto> GetEventStatusAsync(string eventId, bool exposeChallengeCode, CancellationToken cancellationToken, Guid? currentUserId = null);
+
+        /// <summary>
+        /// Retrieves a paginated list of drop events.
+        /// </summary>
+        /// <param name="scope">
+        /// Filter applied to the event list.
+        /// </param>
+        /// <param name="page">
+        /// Page number to retrieve.
+        /// </param>
+        /// <param name="pageSize">
+        /// Number of items per page.
+        /// </param>
+        /// <param name="includeDrafts">
+        /// Indicates whether draft events should be included.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <returns>
+        /// A paginated collection of drop events.
+        /// </returns>
         Task<PagedResult<EventStatusDto>> ListEventsAsync(string scope, int page, int pageSize, bool includeDrafts, CancellationToken cancellationToken, Guid? currentUserId = null);
+
+        /// <summary>
+        /// Retrieves all reward keys won by a specific user.
+        /// </summary>
+        /// <param name="userId">
+        /// Identifier of the target user.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A collection of reward keys won by the user.
+        /// </returns>
         Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken);
     }
 
+    /// <summary>
+    /// Implements drop event management, participation workflows,
+    /// reward distribution, and event status tracking.
+    /// </summary>
     public partial class DropsService : IDropsService
     {
         private const int MaximumRewardLength = InputValidationLimits.DropRewardCode;
@@ -44,6 +135,7 @@ namespace Spectrum.API.Services.Drops
             _logger = logger;
         }
 
+        /// <inheritdoc />
         public async Task<DropActionResultDto> CreateEventAsync(CreateDropEventDto dto, Guid adminId, CancellationToken cancellationToken)
         {
             var dates = new DropEventDates(dto.StartAt, dto.JoinDeadlineAt, dto.RevealAt, dto.EndAt);
@@ -73,6 +165,7 @@ namespace Spectrum.API.Services.Drops
             return EnsureActionSuccess(response);
         }
 
+        /// <inheritdoc />
         public async Task<DropActionResultDto> UpdateEventAsync(string eventId, UpdateDropEventDto dto, CancellationToken cancellationToken)
         {
             var current = await GetEventStatusAsync(eventId, exposeChallengeCode: false, cancellationToken);
@@ -109,6 +202,7 @@ namespace Spectrum.API.Services.Drops
             return EnsureActionSuccess(response);
         }
 
+        /// <inheritdoc />
         public async Task<DropActionResultDto> JoinEventAsync(Guid userId, string eventId, CancellationToken cancellationToken)
         {
             try
@@ -128,6 +222,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
+        /// <inheritdoc />
         public async Task<ClaimDropResultDto> ClaimAccessKeyAsync(Guid userId, string eventId, ClaimDropDto dto, CancellationToken cancellationToken)
         {
             var user = await _userRepository.GetUserByIdAsync(userId)
@@ -165,6 +260,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
+        /// <inheritdoc />
         public async Task<EventStatusDto> GetEventStatusAsync(
             string eventId,
             bool exposeChallengeCode,
@@ -194,6 +290,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
+        /// <inheritdoc />
         public async Task<PagedResult<EventStatusDto>> ListEventsAsync(
             string scope,
             int page,
@@ -232,6 +329,7 @@ namespace Spectrum.API.Services.Drops
             }
         }
 
+        /// <inheritdoc />
         public async Task<IEnumerable<WonKeyDto>> GetUserWonKeysAsync(Guid userId, CancellationToken cancellationToken)
         {
             try
