@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Spectrum.API.Data;
-using Spectrum.API.Dtos.Drops;
 using Spectrum.API.Dtos.Home;
 using Spectrum.API.Repositories;
 using Spectrum.API.Services.Analytics;
@@ -9,11 +8,33 @@ using Spectrum.API.Services.Votes;
 
 namespace Spectrum.API.Services.Home
 {
+    /// <summary>
+    /// Provides dashboard data displayed on the application's home page.
+    /// </summary>
     public interface IHomeDashboardService
     {
+        /// <summary>
+        /// Retrieves aggregated dashboard information for the current user.
+        /// </summary>
+        /// <param name="currentUserId">
+        /// Identifier of the authenticated user, if available.
+        /// </param>
+        /// <param name="isAdmin">
+        /// Indicates whether the current user has administrative privileges.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// Token used to cancel the operation.
+        /// </param>
+        /// <returns>
+        /// A populated dashboard view model.
+        /// </returns>
         Task<HomeDashboardDto> GetDashboardAsync(Guid? currentUserId = null, bool isAdmin = false, CancellationToken cancellationToken = default);
     }
 
+    /// <summary>
+    /// Builds the home dashboard by aggregating data from games, reviews,
+    /// comments, votes, and drop events.
+    /// </summary>
     public class HomeDashboardService : IHomeDashboardService
     {
         private readonly SpectrumDbContext _context;
@@ -37,6 +58,7 @@ namespace Spectrum.API.Services.Home
             _voteService = voteService;
         }
 
+        /// <inheritdoc />
         public async Task<HomeDashboardDto> GetDashboardAsync(Guid? currentUserId = null, bool isAdmin = false, CancellationToken cancellationToken = default)
         {
             var today = DateTime.UtcNow.Date;
