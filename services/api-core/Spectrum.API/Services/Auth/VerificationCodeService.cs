@@ -9,6 +9,10 @@ using System.Security.Cryptography;
 
 namespace Spectrum.API.Services.Auth
 {
+    /// <summary>
+    /// Manages the lifecycle of verification codes, including generation,
+    /// validation, expiration, cooldown enforcement, and verification sessions.
+    /// </summary>
     public class VerificationCodeService : IVerificationCodeService
     {
         private readonly SpectrumDbContext _context;
@@ -20,6 +24,7 @@ namespace Spectrum.API.Services.Auth
             _options = options.Value;
         }
 
+        /// <inheritdoc />
         public async Task<string> CreateCodeAsync(VerificationPurpose purpose, string email, Guid? userId)
         {
             var normalizedEmail = NormalizeEmail(email);
@@ -46,6 +51,7 @@ namespace Spectrum.API.Services.Auth
             return code;
         }
 
+        /// <inheritdoc />
         public async Task ConsumeCodeAsync(VerificationPurpose purpose, string email, string code, Guid? userId = null)
         {
             var verificationCode = await ValidateCodeAsync(purpose, email, code, userId);
@@ -53,6 +59,7 @@ namespace Spectrum.API.Services.Auth
             await _context.SaveChangesAsync();
         }
 
+        /// <inheritdoc />
         public async Task<string> VerifyCodeAndCreateSessionAsync(VerificationPurpose purpose, string email, string code, Guid? userId = null)
         {
             var verificationCode = await ValidateCodeAsync(purpose, email, code, userId);
@@ -63,6 +70,7 @@ namespace Spectrum.API.Services.Auth
             return sessionToken;
         }
 
+        /// <inheritdoc />
         public async Task ConsumeSessionAsync(VerificationPurpose purpose, string email, string verificationToken, Guid? userId = null)
         {
             var normalizedEmail = NormalizeEmail(email);

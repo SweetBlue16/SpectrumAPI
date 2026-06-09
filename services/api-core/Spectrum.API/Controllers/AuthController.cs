@@ -43,8 +43,28 @@ namespace Spectrum.API.Controllers
             return CreatedAtAction(nameof(Login), new { email = response.Email }, response);
         }
 
+        /// <summary>
+        /// Verifies the registration code previously sent to the user's email address.
+        /// Upon successful verification, activates the account and issues an authentication token.
+        /// </summary>
+        /// <param name="verifyDto">
+        /// The email address and verification code provided by the user.
+        /// </param>
+        /// <returns>
+        /// The authenticated user's identity information and an active JWT.
+        /// </returns>
+        /// <response code="200">
+        /// The verification code is valid and the account has been successfully activated.
+        /// </response>
+        /// <response code="400">
+        /// The request payload failed validation.
+        /// </response>
+        /// <response code="401">
+        /// The verification code is invalid, expired, or does not match the specified email address.
+        /// </response>
         [HttpPost("register/verify")]
         [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> VerifyRegistration([FromBody] VerifyRegistrationCodeDto verifyDto)
         {
@@ -52,8 +72,24 @@ namespace Spectrum.API.Controllers
             return Ok(response);
         }
 
+        /// <summary>
+        /// Generates and sends a new registration verification code to a pending user account.
+        /// </summary>
+        /// <param name="resendDto">
+        /// The email address associated with the account awaiting verification.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating that a new verification code has been issued.
+        /// </returns>
+        /// <response code="200">
+        /// A new verification code has been successfully generated and sent.
+        /// </response>
+        /// <response code="400">
+        /// The request payload failed validation.
+        /// </response>
         [HttpPost("register/resend-code")]
         [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> ResendRegistrationCode([FromBody] ResendRegistrationCodeDto resendDto)
         {
             var response = await _authService.ResendRegistrationCodeAsync(resendDto);
@@ -93,16 +129,51 @@ namespace Spectrum.API.Controllers
             return Ok(response);
         }
 
+        /// <summary>
+        /// Initiates the password recovery workflow by generating and sending a verification code.
+        /// </summary>
+        /// <param name="forgotPasswordDto">
+        /// The email address associated with the account requesting password recovery.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating that the recovery process has been initiated.
+        /// </returns>
+        /// <response code="200">
+        /// The password recovery request has been processed successfully.
+        /// </response>
+        /// <response code="400">
+        /// The request payload failed validation.
+        /// </response>
         [HttpPost("password/forgot")]
         [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto)
         {
             var response = await _authService.ForgotPasswordAsync(forgotPasswordDto);
             return Ok(response);
         }
 
+        /// <summary>
+        /// Validates a password recovery verification code and issues a temporary reset token.
+        /// </summary>
+        /// <param name="verifyDto">
+        /// The email address and verification code provided by the user.
+        /// </param>
+        /// <returns>
+        /// A temporary verification token required to complete the password reset process.
+        /// </returns>
+        /// <response code="200">
+        /// The verification code is valid and a reset token has been issued.
+        /// </response>
+        /// <response code="400">
+        /// The request payload failed validation.
+        /// </response>
+        /// <response code="401">
+        /// The verification code is invalid, expired, or does not match the specified email address.
+        /// </response>
         [HttpPost("password/verify-code")]
         [ProducesResponseType(typeof(PasswordCodeVerifiedDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> VerifyPasswordResetCode([FromBody] VerifyPasswordCodeDto verifyDto)
         {
@@ -110,8 +181,27 @@ namespace Spectrum.API.Controllers
             return Ok(response);
         }
 
+        /// <summary>
+        /// Completes the password reset workflow using a previously issued verification token.
+        /// </summary>
+        /// <param name="resetPasswordDto">
+        /// The email address, verification token, and new password provided by the user.
+        /// </param>
+        /// <returns>
+        /// A confirmation message indicating that the password has been successfully updated.
+        /// </returns>
+        /// <response code="200">
+        /// The password has been successfully reset.
+        /// </response>
+        /// <response code="400">
+        /// The request payload failed validation.
+        /// </response>
+        /// <response code="401">
+        /// The verification token is invalid, expired, or does not match the specified email address.
+        /// </response>
         [HttpPost("password/reset")]
         [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
         {
