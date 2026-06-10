@@ -5,8 +5,14 @@
     /// </summary>
     public class ProfilePlatformDto
     {
+        /// <summary>
+        /// Platform identifier.
+        /// </summary>
         public int Id { get; set; }
 
+        /// <summary>
+        /// Platform display name.
+        /// </summary>
         public string Name { get; set; } = string.Empty;
     }
 }

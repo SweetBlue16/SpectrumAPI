@@ -1,6 +1,6 @@
 ﻿namespace Spectrum.API.Dtos.External
 {
-/// <summary>
+    /// <summary>
     /// Wrapper for the platform object in the RAWG nested JSON structure.
     /// </summary>
     public class RawgPlatformWrapperDto

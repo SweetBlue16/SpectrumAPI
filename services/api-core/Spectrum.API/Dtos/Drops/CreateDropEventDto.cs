@@ -3,6 +3,9 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Spectrum.API.Dtos.Drops
 {
+    /// <summary>
+    /// Payload used to create a new giveaway event.
+    /// </summary>
     public class CreateDropEventDto
     {
         [Required]
@@ -25,15 +28,40 @@ namespace Spectrum.API.Dtos.Drops
         [MaxLength(InputValidationLimits.ShortText)]
         public string Platform { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Date and time when users can start joining the event.
+        /// </summary>
         public required DateTime StartAt { get; set; }
+
+        /// <summary>
+        /// Registration deadline for participants.
+        /// </summary>
         public required DateTime JoinDeadlineAt { get; set; }
+
+        /// <summary>
+        /// Date and time when winners can begin claiming rewards.
+        /// </summary>
         public required DateTime RevealAt { get; set; }
+
+        /// <summary>
+        /// Date and time when the giveaway event ends.
+        /// </summary>
         public required DateTime EndAt { get; set; }
+
+        /// <summary>
+        /// Maximum number of participants allowed.
+        /// </summary>
         public required int TotalSlots { get; set; }
 
+        /// <summary>
+        /// Public challenge code required during reward claiming.
+        /// </summary>
         [MaxLength(InputValidationLimits.ShortText)]
         public string PublicChallengeCode { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Reward keys available for distribution.
+        /// </summary>
         public List<string> AccessKeys { get; set; } = new();
     }
 }

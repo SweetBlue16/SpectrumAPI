@@ -7,6 +7,9 @@ namespace Spectrum.API.Dtos.Profile
     /// </summary>
     public class UserProfileDto
     {
+        /// <summary>
+        /// Unique identifier of the user profile.
+        /// </summary>
         public required Guid Id { get; set; }
 
         /// <summary>

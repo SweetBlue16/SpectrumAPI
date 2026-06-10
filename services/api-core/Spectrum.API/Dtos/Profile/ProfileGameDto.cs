@@ -5,10 +5,19 @@
     /// </summary>
     public class ProfileGameDto
     {
-        public String Id { get; set; } = string.Empty;
+        /// <summary>
+        /// Game identifier.
+        /// </summary>
+        public string Id { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Display name of the game.
+        /// </summary>
         public string Name { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Cover image URL.
+        /// </summary>
         public string? ImageUrl { get; set; }
     }
 }
